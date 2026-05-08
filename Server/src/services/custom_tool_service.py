@@ -46,6 +46,16 @@ async def get_user_id_from_context(ctx: Context) -> str | None:
     return user_id if isinstance(user_id, str) and user_id else None
 
 
+def no_active_unity_instance_message() -> str:
+    transport = (config.transport_mode or "stdio").lower()
+    if transport == "http" and not config.http_remote_hosted:
+        return (
+            "No active Unity instance. Configure the MCP URL with "
+            "?unity_session=<project-path-hash> or start/connect MCP for Unity."
+        )
+    return "No active Unity instance. Call set_active_instance with Name@hash from mcpforunity://instances."
+
+
 class RegisterToolsPayload(BaseModel):
     project_id: str
     project_hash: str | None = None
@@ -377,7 +387,7 @@ class CustomToolService:
             if not unity_instance:
                 return MCPResponse(
                     success=False,
-                    message="No active Unity instance. Call set_active_instance with Name@hash from mcpforunity://instances.",
+                    message=no_active_unity_instance_message(),
                 )
 
             project_id = resolve_project_id_for_unity_instance(unity_instance)

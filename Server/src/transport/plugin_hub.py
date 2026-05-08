@@ -36,6 +36,13 @@ from transport.models import (
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_session_id(session_id: str | None) -> str | None:
+    if not session_id:
+        return None
+    value = session_id.strip().lower()
+    return value or None
+
 # ---------- MCP session tracking ----------
 # FastMCP doesn't expose active MCP client sessions.  We patch
 # ``MiddlewareServerSession.__aenter__`` once to register every new
@@ -409,7 +416,7 @@ class PluginHub(WebSocketEndpoint):
             raise RuntimeError("PluginHub not configured")
 
         project_name = payload.project_name
-        project_hash = payload.project_hash
+        project_hash = payload.project_hash.strip().lower()
         unity_version = payload.unity_version
         project_path = payload.project_path
 
@@ -421,7 +428,17 @@ class PluginHub(WebSocketEndpoint):
         # Get user_id from websocket state (set during API key validation)
         user_id = getattr(websocket.state, "user_id", None)
 
-        session_id = str(uuid.uuid4())
+        if config.http_remote_hosted:
+            session_id = str(uuid.uuid4())
+        else:
+            requested_session_id = _normalize_session_id(payload.session_id)
+            session_id = requested_session_id or project_hash.lower()
+            if requested_session_id and requested_session_id != project_hash.lower():
+                await websocket.close(code=4400, reason="Session id must match project hash")
+                raise ValueError(
+                    f"Plugin registration session_id must match project_hash: {requested_session_id} != {project_hash}"
+                )
+
         # Inform the plugin of its assigned session ID
         response = RegisteredMessage(session_id=session_id)
         await websocket.send_json(response.model_dump())
@@ -431,6 +448,12 @@ class PluginHub(WebSocketEndpoint):
         async with lock:
             # Clean up the evicted session's connection, ping loop, and pending commands
             # so they don't linger as orphans after a domain-reload reconnection race.
+            if not evicted_session_id:
+                existing_ws = cls._connections.get(session_id)
+                if existing_ws is not None and existing_ws is not websocket:
+                    evicted_session_id = session_id
+                    evicted_ws = existing_ws
+
             if evicted_session_id:
                 evicted_ws = cls._connections.pop(evicted_session_id, None)
                 old_ping = cls._ping_tasks.pop(evicted_session_id, None)

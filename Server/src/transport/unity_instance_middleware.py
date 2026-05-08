@@ -11,6 +11,7 @@ import time
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 
 from core.config import config
+from core.constants import UNITY_SESSION_HEADER, UNITY_SESSION_QUERY
 from services.registry import get_registered_tools
 from transport.plugin_hub import PluginHub
 
@@ -45,6 +46,22 @@ def set_unity_instance_middleware(middleware: 'UnityInstanceMiddleware') -> None
     """
     global _unity_instance_middleware
     _unity_instance_middleware = middleware
+
+
+def _get_requested_unity_session_hash() -> str | None:
+    """Read a project hash from the current HTTP request header or URL query."""
+    try:
+        from fastmcp.server.dependencies import get_http_headers, get_http_request
+        headers = get_http_headers(include_all=True)
+        value = headers.get(UNITY_SESSION_HEADER.lower())
+        if not value:
+            request = get_http_request()
+            value = request.query_params.get(UNITY_SESSION_QUERY)
+        if value:
+            value = str(value).strip().lower()
+        return value or None
+    except Exception:
+        return None
 
 
 class UnityInstanceMiddleware(Middleware):
@@ -360,6 +377,12 @@ class UnityInstanceMiddleware(Middleware):
                     # Raises ValueError with a user-friendly message on invalid input.
                     active_instance = await self._resolve_instance_value(raw_str, ctx)
                     logger.debug("Per-call unity_instance resolved to: %s", active_instance)
+
+        if not active_instance:
+            requested_hash = _get_requested_unity_session_hash()
+            if requested_hash:
+                active_instance = await self._resolve_instance_value(requested_hash, ctx)
+                logger.debug("Request unity session resolved to: %s", active_instance)
 
         if not active_instance:
             active_instance = await self.get_active_instance(ctx)

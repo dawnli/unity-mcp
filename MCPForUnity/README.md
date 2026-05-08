@@ -33,9 +33,10 @@ The window has four areas: Server Status, Unity Bridge, MCP Client Configuration
   - Select server folder…: Choose the local `Server` folder (dev only; usually not needed when using uvx).
   - Verify again: Re-checks server presence.
   - If Python isn’t detected, use “Open Install Instructions”.
-- HTTP Server Command foldout:
-  - Expands to display the exact `uvx` command Unity will run.
-  - Includes a copy button and the “Start Local HTTP Server” action so you can launch or reuse the command elsewhere.
+- HTTP Local shared server:
+  - Server startup is managed externally on fixed `127.0.0.1:8080`; `tools/start_shared_mcp_server.py` starts it in the background and reuses an already-running server.
+  - Unity only starts or reconnects a session whose id is the normalized absolute project path hash.
+  - If the shared server is offline, the connection panel shows “Server Not Started”.
 
 ---
 

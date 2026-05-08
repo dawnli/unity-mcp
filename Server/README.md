@@ -115,14 +115,16 @@ uv run src/main.py --transport stdio
 
 The server connects to Unity Editor automatically when both are running. Most users do not need to change any settings.
 
+For local HTTP multi-project workflows, run one shared server on a fixed host/port. `python tools/start_shared_mcp_server.py` starts it in the background, waits for `/health`, and reuses an already-running Unity MCP server on `127.0.0.1:8080`. Each Unity plugin uses the normalized absolute project root path hash as its stable session id, and generated AI-client URLs include `?unity_session=<project-path-hash>` so requests route to the matching Unity project without `set_active_instance`.
+
 ### CLI options
 
-These options apply to the `mcp-for-unity` command (whether run via `uvx`, Docker, or `python src/main.py`).
+These options apply to manual or remote-hosted `mcp-for-unity` runs. The shared local workflow should use `tools/start_shared_mcp_server.py`, which fixes the local address at `127.0.0.1:8080`.
 
 - `--transport {stdio,http}` - Transport protocol (default: `stdio`)
-- `--http-url URL` - Base URL used to derive host/port defaults (default: `http://localhost:8080`)
-- `--http-host HOST` - Override HTTP bind host (overrides URL host)
-- `--http-port PORT` - Override HTTP bind port (overrides URL port)
+- `--http-url URL` - Base URL used to derive host/port defaults for manual or remote-hosted runs
+- `--http-host HOST` - Override HTTP bind host for manual or remote-hosted runs
+- `--http-port PORT` - Override HTTP bind port for manual or remote-hosted runs
 - `--http-remote-hosted` - Treat HTTP transport as remotely hosted
   - Requires API key authentication (see below)
   - Disables local/CLI-only HTTP routes (`/api/command`, `/api/instances`, `/api/custom-tools`)
@@ -141,9 +143,9 @@ These options apply to the `mcp-for-unity` command (whether run via `uvx`, Docke
 ### Environment variables
 
 - `UNITY_MCP_TRANSPORT` - Transport protocol: `stdio` or `http`
-- `UNITY_MCP_HTTP_URL` - HTTP server URL (default: `http://localhost:8080`)
-- `UNITY_MCP_HTTP_HOST` - HTTP bind host (overrides URL host)
-- `UNITY_MCP_HTTP_PORT` - HTTP bind port (overrides URL port)
+- `UNITY_MCP_HTTP_URL` - HTTP server URL for manual or remote-hosted runs
+- `UNITY_MCP_HTTP_HOST` - HTTP bind host for manual or remote-hosted runs
+- `UNITY_MCP_HTTP_PORT` - HTTP bind port for manual or remote-hosted runs
 - `UNITY_MCP_HTTP_REMOTE_HOSTED` - Enable remote-hosted mode (`true`, `1`, or `yes`)
 - `UNITY_MCP_DEFAULT_INSTANCE` - Default Unity instance to target (project name, hash, or `Name@hash`)
 - `UNITY_MCP_SKIP_STARTUP_CONNECT=1` - Skip initial Unity connection attempt on startup

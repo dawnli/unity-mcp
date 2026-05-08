@@ -120,6 +120,52 @@ class TestInstanceRoutingIntegration:
             "unity_instance", "TestProject@abc123")
 
     @pytest.mark.asyncio
+    async def test_middleware_routes_by_requested_unity_session_hash(self, monkeypatch):
+        """HTTP requests with unity_session hash should route without set_active_instance."""
+        middleware = UnityInstanceMiddleware()
+        monkeypatch.setattr(config, "transport_mode", "http")
+
+        ctx = Mock(spec=Context)
+        state_storage = {}
+        ctx.client_id = "client-1"
+        ctx.set_state = AsyncMock(side_effect=lambda k, v: state_storage.__setitem__(k, v))
+        ctx.get_state = AsyncMock(side_effect=lambda k: state_storage.get(k))
+
+        middleware_ctx = Mock()
+        middleware_ctx.fastmcp_context = ctx
+        middleware_ctx.message = Mock(arguments={})
+
+        sessions = SessionList(sessions={
+            "abc123": SessionDetails(
+                project="TestProject",
+                hash="abc123",
+                unity_version="2022.3",
+                connected_at="now",
+            )
+        })
+        monkeypatch.setattr(
+            "transport.unity_instance_middleware._get_requested_unity_session_hash",
+            lambda: "abc123",
+        )
+        monkeypatch.setattr("transport.unity_instance_middleware.PluginHub.is_configured", lambda: True)
+        monkeypatch.setattr(
+            "transport.unity_instance_middleware.PluginHub.get_sessions",
+            AsyncMock(return_value=sessions),
+        )
+        monkeypatch.setattr(
+            "transport.unity_instance_middleware.PluginHub._resolve_session_id",
+            AsyncMock(return_value="abc123"),
+        )
+
+        async def mock_call_next(ctx):
+            return {"success": True}
+
+        await middleware.on_call_tool(middleware_ctx, mock_call_next)
+
+        assert state_storage["unity_instance"] == "TestProject@abc123"
+        assert state_storage["unity_session_id"] == "abc123"
+
+    @pytest.mark.asyncio
     async def test_get_unity_instance_from_context_checks_state(self):
         """get_unity_instance_from_context must read from ctx.get_state()."""
         ctx = Mock(spec=Context)
@@ -180,6 +226,7 @@ class TestInstanceRoutingHTTP:
         ctx.get_state = AsyncMock(side_effect=lambda k: state_storage.get(k))
 
         monkeypatch.setattr(config, "transport_mode", "http")
+        monkeypatch.setattr(config, "http_remote_hosted", True)
         fake_sessions = SessionList(
             sessions={
                 "sess-1": SessionDetails(
@@ -216,6 +263,7 @@ class TestInstanceRoutingHTTP:
         ctx.get_state = AsyncMock(side_effect=lambda k: state_storage.get(k))
 
         monkeypatch.setattr(config, "transport_mode", "http")
+        monkeypatch.setattr(config, "http_remote_hosted", True)
         fake_sessions = SessionList(
             sessions={
                 "sess-99": SessionDetails(
@@ -246,8 +294,10 @@ class TestInstanceRoutingHTTP:
         middleware = UnityInstanceMiddleware()
         ctx = Mock(spec=Context)
         ctx.session_id = "http-session-3"
+        ctx.get_state = AsyncMock(return_value=None)
 
         monkeypatch.setattr(config, "transport_mode", "http")
+        monkeypatch.setattr(config, "http_remote_hosted", True)
         fake_sessions = SessionList(sessions={})
         monkeypatch.setattr(
             "services.tools.set_active_instance.PluginHub.get_sessions",
@@ -269,8 +319,10 @@ class TestInstanceRoutingHTTP:
         middleware = UnityInstanceMiddleware()
         ctx = Mock(spec=Context)
         ctx.session_id = "http-session-4"
+        ctx.get_state = AsyncMock(return_value=None)
 
         monkeypatch.setattr(config, "transport_mode", "http")
+        monkeypatch.setattr(config, "http_remote_hosted", True)
         fake_sessions = SessionList(
             sessions={
                 "sess-a": SessionDetails(project="ProjA", hash="abc12345", unity_version="2022", connected_at="now"),

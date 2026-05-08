@@ -33,6 +33,7 @@ class PingMessage(BaseModel):
 
 class RegisterMessage(BaseModel):
     type: str = "register"
+    session_id: str | None = None
     project_name: str = "Unknown Project"
     project_hash: str
     unity_version: str = "Unknown"

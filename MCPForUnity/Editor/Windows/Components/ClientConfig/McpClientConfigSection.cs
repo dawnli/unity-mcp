@@ -280,6 +280,11 @@ namespace MCPForUnity.Editor.Windows.Components.ClientConfig
 
         private void OnConfigureAllClientsClicked()
         {
+            if (!TryEnsureLocalHttpUrlForConfiguration())
+            {
+                return;
+            }
+
             try
             {
                 var summary = MCPServiceLocator.Client.ConfigureAllDetectedClients();
@@ -309,6 +314,11 @@ namespace MCPForUnity.Editor.Windows.Components.ClientConfig
             if (selectedClientIndex < 0 || selectedClientIndex >= configurators.Count)
                 return;
 
+            if (!TryEnsureLocalHttpUrlForConfiguration())
+            {
+                return;
+            }
+
             var client = configurators[selectedClientIndex];
 
             // Handle CLI configurators asynchronously
@@ -332,6 +342,25 @@ namespace MCPForUnity.Editor.Windows.Components.ClientConfig
                 McpLog.Error($"Configuration failed: {ex.Message}");
                 EditorUtility.DisplayDialog("Configuration Failed", ex.Message, "OK");
             }
+        }
+
+        private static bool TryEnsureLocalHttpUrlForConfiguration()
+        {
+            if (!EditorConfigurationCache.Instance.UseHttpTransport || HttpEndpointUtility.IsRemoteScope())
+            {
+                return true;
+            }
+
+            string localUrl = HttpEndpointUtility.GetLocalBaseUrl();
+            if (HttpEndpointUtility.IsHttpLocalUrlAllowedForLaunch(localUrl, out string localUrlError))
+            {
+                return true;
+            }
+
+            string message = localUrlError ?? "HTTP Local requires a loopback URL.";
+            EditorUtility.DisplayDialog("Invalid HTTP Local URL", message, "OK");
+            McpLog.Warn($"Client configuration blocked: {message}");
+            return false;
         }
 
         private void ConfigureClaudeCliAsync(IMcpClientConfigurator client)

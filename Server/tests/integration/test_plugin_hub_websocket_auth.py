@@ -181,3 +181,44 @@ class TestUserIdFlowsToRegistration:
         assert session.user_id == "user-99"
         assert session.project_name == "TestProject"
         assert session.project_hash == "abc123"
+
+
+class TestProjectScopedRegistration:
+    @pytest.mark.asyncio
+    async def test_local_session_id_must_match_project_hash(self, monkeypatch):
+        monkeypatch.setattr(config, "http_remote_hosted", False)
+
+        registry = PluginRegistry()
+        loop = asyncio.get_running_loop()
+        PluginHub.configure(registry, loop)
+
+        ws = _make_mock_websocket(headers={})
+        hub = _make_hub()
+        await hub.on_connect(ws)
+
+        await hub.on_receive(ws, {
+            "type": "register",
+            "session_id": "different",
+            "project_name": "ExpectedProject",
+            "project_hash": "abc123",
+            "unity_version": "2022.3",
+        })
+
+        ws.close.assert_called_with(code=4400, reason="Session id must match project hash")
+        sessions = await registry.list_sessions()
+        assert sessions == {}
+
+    @pytest.mark.asyncio
+    async def test_set_active_instance_is_noop_for_shared_local_http(self, monkeypatch):
+        """AI-facing instance selection is unnecessary when local URL carries unity_session."""
+        from services.tools.set_active_instance import set_active_instance
+
+        monkeypatch.setattr(config, "transport_mode", "http")
+        monkeypatch.setattr(config, "http_remote_hosted", False)
+
+        ctx = AsyncMock()
+        result = await set_active_instance(ctx, "Anything@abc123")
+
+        assert result["success"] is True
+        assert "no active instance selection is required" in result["message"]
+        assert result["data"]["routing"] == "unity_session"

@@ -37,7 +37,8 @@ MCP tools call Unity via WebSocket (`send_with_unity_instance`). CLI commands ca
 ### Transport Modes
 
 - **Stdio**: Single-agent only. Separate Python process per client. Legacy TCP bridge to Unity. New connections stomp old ones.
-- **HTTP**: Multi-agent ready. Single shared Python server. WebSocket hub at `/hub/plugin`. Session isolation via `client_id`.
+- **HTTP Local**: Shared Python server on fixed `127.0.0.1:8080`. Unity project path hashes are used as stable session ids and `unity_session` routes requests to the matching project.
+- **HTTP Remote**: Shared Python server. WebSocket hub at `/hub/plugin`. Session isolation via API-key user and explicit instance selection.
 
 ## Code Philosophy
 

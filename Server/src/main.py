@@ -15,6 +15,7 @@ from services.custom_tool_service import (
     resolve_project_id_for_unity_instance,
 )
 from core.config import config
+from core.constants import UNITY_SESSION_HEADER, UNITY_SESSION_QUERY
 from starlette.routing import WebSocketRoute
 from starlette.responses import JSONResponse
 import argparse
@@ -86,6 +87,14 @@ logging.basicConfig(
     force=True    # Ensure our handler replaces any prior stdout handlers
 )
 logger = logging.getLogger("mcp-for-unity-server")
+
+
+def _requested_unity_session_hash(request: Request) -> str | None:
+    value = request.headers.get(UNITY_SESSION_HEADER) or request.query_params.get(UNITY_SESSION_QUERY)
+    if not value:
+        return None
+    value = value.strip().lower()
+    return value or None
 
 # Also write logs to a rotating file so logs are available when launched via stdio
 try:
@@ -297,15 +306,27 @@ def _build_instructions(project_scoped_tools: bool) -> str:
             "No project-scoped custom tools resource is available."
         )
 
+    if config.transport_mode == "http" and not config.http_remote_hosted:
+        targeting_note = (
+            "Targeting Unity:\n"
+            "- Local HTTP uses one shared server. Each AI client URL should include ?unity_session=<project-path-hash>.\n"
+            "- Do not call set_active_instance for local HTTP routing when the unity_session query is present.\n"
+            "- If Unity is not connected, ask the user to open that project in Unity and start/connect MCP for Unity."
+        )
+    else:
+        targeting_note = (
+            "Targeting Unity instances:\n"
+            "- Use the resource mcpforunity://instances to list active Unity sessions (Name@hash).\n"
+            "- When multiple instances are connected, call set_active_instance with the exact Name@hash before using tools/resources to pin routing for the whole session. The server will error if multiple are connected and no active instance is set.\n"
+            "- Alternatively, pass unity_instance as a parameter on any individual tool call to route just that call (e.g. unity_instance=\"MyGame@abc123\", unity_instance=\"abc\" for a hash prefix, or unity_instance=\"6401\" for a port number in stdio mode). This does not change the session default."
+        )
+
     return f"""
 This server provides tools to interact with the Unity Game Engine Editor.
 
 {custom_tools_note}
 
-Targeting Unity instances:
-- Use the resource mcpforunity://instances to list active Unity sessions (Name@hash).
-- When multiple instances are connected, call set_active_instance with the exact Name@hash before using tools/resources to pin routing for the whole session. The server will error if multiple are connected and no active instance is set.
-- Alternatively, pass unity_instance as a parameter on any individual tool call to route just that call (e.g. unity_instance="MyGame@abc123", unity_instance="abc" for a hash prefix, or unity_instance="6401" for a port number in stdio mode). This does not change the session default.
+{targeting_note}
 
 Important Workflows:
 
@@ -383,7 +404,7 @@ def create_mcp_server(project_scoped_tools: bool) -> FastMCP:
             "status": "healthy",
             "timestamp": time.time(),
             "version": _server_version or "unknown",
-            "message": "MCP for Unity server is running"
+            "message": "MCP for Unity server is running",
         })
 
     @mcp.custom_route("/api/auth/login-url", methods=["GET"])
@@ -413,6 +434,7 @@ def create_mcp_server(project_scoped_tools: bool) -> FastMCP:
                 command_type = body.get("type")
                 params = body.get("params", {})
                 unity_instance = body.get("unity_instance")
+                requested_session_hash = _requested_unity_session_hash(request)
 
                 if not command_type:
                     return JSONResponse({"success": False, "error": "Missing 'type' field"}, status_code=400)
@@ -437,6 +459,13 @@ def create_mcp_server(project_scoped_tools: bool) -> FastMCP:
                             session_id = sid
                             session_details = details
                             break
+                elif requested_session_hash:
+                    for sid, details in sessions.sessions.items():
+                        detail_hash = (details.hash or "").lower()
+                        if sid.lower() == requested_session_hash or detail_hash == requested_session_hash:
+                            session_id = sid
+                            session_details = details
+                            break
 
                 # If a specific unity_instance was requested but not found, return an error
                 # (Check done here so execute_custom_tool can also validate the instance)
@@ -448,20 +477,27 @@ def create_mcp_server(project_scoped_tools: bool) -> FastMCP:
                         },
                         status_code=404,
                     )
-
-                # If no specific unity_instance requested, use first available session
-                # (Must be done before execute_custom_tool check so all command types benefit)
-                if not session_id:
-                    try:
-                        session_id = next(iter(sessions.sessions.keys()))
-                        session_details = sessions.sessions.get(session_id)
-                    except StopIteration:
-                        # No sessions available - sessions.sessions is empty
-                        # This should not happen since we checked at line 378, but handle gracefully
-                        return JSONResponse({
+                if requested_session_hash and not session_id:
+                    return JSONResponse(
+                        {
                             "success": False,
-                            "error": "No Unity instances connected. Make sure Unity is running with MCP plugin."
-                        }, status_code=503)
+                            "error": f"Unity session '{requested_session_hash}' not found",
+                        },
+                        status_code=404,
+                    )
+
+                # If no specific target is requested, only auto-select when there is exactly one session.
+                if not session_id:
+                    if len(sessions.sessions) != 1:
+                        return JSONResponse(
+                            {
+                                "success": False,
+                                "error": "Multiple Unity instances connected. Provide unity_session query/header or unity_instance.",
+                            },
+                            status_code=400,
+                        )
+                    session_id = next(iter(sessions.sessions.keys()))
+                    session_details = sessions.sessions.get(session_id)
 
                 # Custom tool execution - must be checked BEFORE the final PluginHub.send_command call
                 # This applies to both cases: with or without explicit unity_instance
@@ -531,13 +567,13 @@ def create_mcp_server(project_scoped_tools: bool) -> FastMCP:
                 sessions = await PluginHub.get_sessions()
                 instances = []
                 for session_id, details in sessions.sessions.items():
-                    instances.append({
-                        "session_id": session_id,
+                    instance_payload = {
                         "project": details.project,
                         "hash": details.hash,
                         "unity_version": details.unity_version,
                         "connected_at": details.connected_at,
-                    })
+                    }
+                    instances.append(instance_payload)
                 return JSONResponse({"success": True, "instances": instances})
             except Exception as e:
                 return JSONResponse({"success": False, "error": str(e)}, status_code=500)
@@ -547,6 +583,7 @@ def create_mcp_server(project_scoped_tools: bool) -> FastMCP:
             """REST endpoint to list custom tools for the active Unity project."""
             try:
                 unity_instance = request.query_params.get("instance")
+                requested_session_hash = _requested_unity_session_hash(request)
                 instance_name, instance_hash = _normalize_instance_token(
                     unity_instance)
 
@@ -572,8 +609,29 @@ def create_mcp_server(project_scoped_tools: bool) -> FastMCP:
                             },
                             status_code=404,
                         )
+                elif requested_session_hash:
+                    for session_id, details in sessions.sessions.items():
+                        detail_hash = (details.hash or "").lower()
+                        if session_id.lower() == requested_session_hash or detail_hash == requested_session_hash:
+                            session_details = details
+                            break
+                    if not session_details:
+                        return JSONResponse(
+                            {
+                                "success": False,
+                                "error": f"Unity session '{requested_session_hash}' not found",
+                            },
+                            status_code=404,
+                        )
                 else:
-                    # No specific unity_instance requested: use first available session
+                    if len(sessions.sessions) != 1:
+                        return JSONResponse(
+                            {
+                                "success": False,
+                                "error": "Multiple Unity instances connected. Provide unity_session query/header or instance.",
+                            },
+                            status_code=400,
+                        )
                     session_details = next(iter(sessions.sessions.values()))
 
                 unity_instance_hint = unity_instance
@@ -660,7 +718,6 @@ Environment Variables:
   UNITY_MCP_HTTP_URL   HTTP server URL (default: http://127.0.0.1:8080)
   UNITY_MCP_HTTP_HOST   HTTP server host (overrides URL host)
   UNITY_MCP_HTTP_PORT   HTTP server port (overrides URL port)
-
 Examples:
   # Use specific Unity project as default
   python -m src.server --default-instance "MyProject"
@@ -695,7 +752,8 @@ Examples:
         type=str,
         default="http://127.0.0.1:8080",
         metavar="URL",
-        help="HTTP server URL (default: http://127.0.0.1:8080). "
+        help="HTTP server URL for manual or remote-hosted runs. "
+             "Shared local launchers use fixed http://127.0.0.1:8080. "
              "Can also set via UNITY_MCP_HTTP_URL environment variable."
     )
     parser.add_argument(
@@ -703,7 +761,7 @@ Examples:
         type=str,
         default=None,
         metavar="HOST",
-        help="HTTP server host (overrides URL host). "
+        help="HTTP server host for manual or remote-hosted runs (overrides URL host). "
              "Overrides UNITY_MCP_HTTP_HOST environment variable."
     )
     parser.add_argument(
@@ -711,7 +769,7 @@ Examples:
         type=int,
         default=None,
         metavar="PORT",
-        help="HTTP server port (overrides URL port). "
+        help="HTTP server port for manual or remote-hosted runs (overrides URL port). "
              "Overrides UNITY_MCP_HTTP_PORT environment variable."
     )
     parser.add_argument(
