@@ -55,14 +55,16 @@ async def unity_instances(ctx: Context) -> dict[str, Any]:
                         "PluginHub session missing required 'project' or 'hash' fields."
                     )
 
-                instances.append({
+                instance_payload = {
                     "id": f"{project}@{project_hash}",
                     "name": project,
                     "hash": project_hash,
                     "unity_version": session_info.unity_version,
                     "connected_at": session_info.connected_at,
-                    "session_id": session_id,
-                })
+                }
+                if config.http_remote_hosted:
+                    instance_payload["session_id"] = session_id
+                instances.append(instance_payload)
 
             # Check for duplicate project names
             name_counts = {}

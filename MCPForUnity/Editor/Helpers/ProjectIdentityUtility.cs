@@ -56,7 +56,7 @@ namespace MCPForUnity.Editor.Helpers
                     return;
                 }
 
-                _cachedProjectHash = ComputeProjectHash(dataPath);
+                _cachedProjectHash = ComputeProjectPathHash(GetProjectRootPath());
                 _cachedProjectName = ComputeProjectName(dataPath);
             }
             catch
@@ -66,8 +66,8 @@ namespace MCPForUnity.Editor.Helpers
         }
 
         /// <summary>
-        /// Returns the SHA1 hash of the current project path (truncated to 16 characters).
-        /// Matches the legacy hash used by the stdio bridge and server registry.
+        /// Returns the SHA256 hash of the normalized absolute project root path,
+        /// truncated to 24 characters. This is also the stable HTTP session id.
         /// </summary>
         public static string GetProjectHash()
         {
@@ -85,24 +85,76 @@ namespace MCPForUnity.Editor.Helpers
             return _cachedProjectName;
         }
 
-        private static string ComputeProjectHash(string dataPath)
+        /// <summary>
+        /// Returns the absolute Unity project root path, stripping the trailing Assets folder
+        /// from Application.dataPath when present.
+        /// </summary>
+        public static string GetProjectRootPath()
         {
             try
             {
-                using SHA1 sha1 = SHA1.Create();
-                byte[] bytes = Encoding.UTF8.GetBytes(dataPath);
-                byte[] hashBytes = sha1.ComputeHash(bytes);
-                var sb = new StringBuilder();
-                foreach (byte b in hashBytes)
+                string dataPath = Application.dataPath;
+                if (string.IsNullOrEmpty(dataPath))
                 {
-                    sb.Append(b.ToString("x2"));
+                    return Directory.GetCurrentDirectory();
                 }
-                return sb.ToString(0, Math.Min(16, sb.Length)).ToLowerInvariant();
+
+                string normalized = dataPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (string.Equals(Path.GetFileName(normalized), "Assets", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Path.GetFullPath(Path.GetDirectoryName(normalized) ?? normalized);
+                }
+
+                return Path.GetFullPath(normalized);
+            }
+            catch
+            {
+                return Directory.GetCurrentDirectory();
+            }
+        }
+
+        public static string ComputeProjectPathHash(string absoluteProjectPath)
+        {
+            try
+            {
+                string normalized = NormalizeProjectRootPath(absoluteProjectPath);
+                using SHA256 sha256 = SHA256.Create();
+                byte[] bytes = Encoding.UTF8.GetBytes(normalized);
+                byte[] hashBytes = sha256.ComputeHash(bytes);
+                var sb = new StringBuilder();
+                for (int i = 0; i < hashBytes.Length && sb.Length < 24; i++)
+                {
+                    sb.Append(hashBytes[i].ToString("x2"));
+                }
+                return sb.ToString(0, 24).ToLowerInvariant();
             }
             catch
             {
                 return "default";
             }
+        }
+
+        public static string NormalizeProjectRootPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                path = Path.GetFullPath(path);
+            }
+            catch
+            {
+                path = path.Trim();
+            }
+
+            path = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+#if UNITY_EDITOR_WIN
+            path = path.ToLowerInvariant();
+#endif
+            return path;
         }
 
         private static string ComputeProjectName(string dataPath)
@@ -152,24 +204,14 @@ namespace MCPForUnity.Editor.Helpers
         }
 
         /// <summary>
-        /// Retrieves a persistent session id for the plugin, creating one if absent.
-        /// The session id is unique per project (scoped by project hash).
+        /// Retrieves the stable plugin session id for this project.
+        /// HTTP local routing uses the normalized absolute project path hash directly.
         /// </summary>
         public static string GetOrCreateSessionId()
         {
             try
             {
-                // Make the session ID project-specific by including the project hash in the key
-                string projectHash = GetProjectHash();
-                string projectSpecificKey = $"{SessionPrefKey}_{projectHash}";
-
-                string sessionId = EditorPrefs.GetString(projectSpecificKey, string.Empty);
-                if (string.IsNullOrEmpty(sessionId))
-                {
-                    sessionId = Guid.NewGuid().ToString();
-                    EditorPrefs.SetString(projectSpecificKey, sessionId);
-                }
-                return sessionId;
+                return GetProjectHash();
             }
             catch
             {
@@ -249,7 +291,7 @@ namespace MCPForUnity.Editor.Helpers
 
                 // Normalise trailing separators so hashes remain stable
                 workingDirectory = workingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                return ComputeProjectHash(Path.Combine(workingDirectory, "Assets"));
+                return ComputeProjectPathHash(workingDirectory);
             }
             catch
             {

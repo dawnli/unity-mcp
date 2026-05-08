@@ -76,13 +76,14 @@ openupm add com.coplaydev.unity-mcp
 ```
 </details>
 
-### 2. Start the Server & Connect
+### 2. Start the Project Server & Connect
 
-1. In Unity: `Window > MCP for Unity`
-2. Click **Start Server** (launches HTTP server on `localhost:8080`)
-3. Select your MCP Client from the dropdown and click **Configure**
-4. Look for 🟢 "Connected ✓"
-5. **Connect your client:** Some clients (Cursor, Antigravity, OpenClaw) require enabling an MCP toggle or plugin in settings. OpenClaw also needs the `openclaw-mcp-bridge` plugin enabled and follows the currently selected MCP for Unity transport (`HTTP` or `stdio`). Others (Claude Desktop, Claude Code) auto-connect after configuration.
+1. Start the shared MCP server from your launcher, or run `python tools/start_shared_mcp_server.py`. The helper starts the server in the background and reuses an already-running Unity MCP server on `127.0.0.1:8080`.
+2. In Unity: `Window > MCP for Unity`
+3. Click **Start Session**. Unity uses the normalized absolute project path hash as its stable session id; if the shared server is offline, the UI shows "Server Not Started".
+4. Select your MCP Client from the dropdown and click **Configure**
+5. Look for 🟢 "Connected ✓"
+6. **Connect your client:** Some clients (Cursor, Antigravity, OpenClaw) require enabling an MCP toggle or plugin in settings. OpenClaw also needs the `openclaw-mcp-bridge` plugin enabled and follows the currently selected MCP for Unity transport (`HTTP` or `stdio`). Others (Claude Desktop, Claude Code) auto-connect after configuration.
 
 **That's it!** Try a prompt like: *"Create a red, blue and yellow cube"* or *"Build a simple player controller"*
 
@@ -109,14 +110,14 @@ openupm add com.coplaydev.unity-mcp
 <details>
 <summary><strong>Manual Configuration</strong></summary>
 
-If auto-setup doesn't work, add this to your MCP client's config file:
+If auto-setup doesn't work, add this to your MCP client's config file. Use the URL shown in the MCP for Unity window for the current Unity project:
 
 **HTTP (default — works with Claude Desktop, Cursor, Windsurf):**
 ```json
 {
   "mcpServers": {
     "unityMCP": {
-      "url": "http://localhost:8080/mcp"
+      "url": "http://127.0.0.1:8080/mcp?unity_session=<project-path-hash>"
     }
   }
 }
@@ -128,7 +129,7 @@ If auto-setup doesn't work, add this to your MCP client's config file:
   "servers": {
     "unityMCP": {
       "type": "http",
-      "url": "http://localhost:8080/mcp"
+      "url": "http://127.0.0.1:8080/mcp?unity_session=<project-path-hash>"
     }
   }
 }
@@ -168,9 +169,10 @@ If auto-setup doesn't work, add this to your MCP client's config file:
 
 MCP for Unity supports multiple Unity Editor instances. To target a specific one:
 
-1. Ask your LLM to check the `unity_instances` resource
-2. Use `set_active_instance` with the `Name@hash` (e.g., `MyProject@abc123`)
-3. All subsequent tools route to that instance
+1. In HTTP Local mode, run one shared server on a fixed URL such as `http://127.0.0.1:8080/mcp`.
+2. Configure the AI client from each Unity project. The generated URL includes `?unity_session=<project-path-hash>`.
+3. The session hash selects the Unity project; you do not need `set_active_instance` for local HTTP multi-project workflows.
+4. To compute the same hash outside Unity, run `python tools/project_path_hash.py /absolute/path/to/UnityProject`.
 </details>
 
 <details>

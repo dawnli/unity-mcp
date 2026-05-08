@@ -87,6 +87,42 @@ async def test_execute_custom_tool_threads_user_id_from_context(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_global_custom_tool_no_instance_message_for_shared_local_http(monkeypatch):
+    monkeypatch.setattr(config, "transport_mode", "http")
+    monkeypatch.setattr(config, "http_remote_hosted", False)
+
+    service = CustomToolService(_DummyMcp())
+    definition = ToolDefinitionModel(name="my_tool", description="My tool")
+    handler = service._build_global_tool_handler(definition)
+
+    ctx = Mock()
+    ctx.get_state = AsyncMock(return_value=None)
+
+    result = await handler(ctx)
+
+    assert result.success is False
+    assert "set_active_instance" not in result.message
+    assert "unity_session=<project-path-hash>" in result.message
+
+
+@pytest.mark.asyncio
+async def test_custom_tool_entrypoints_no_instance_message_for_shared_local_http(monkeypatch):
+    monkeypatch.setattr(config, "transport_mode", "http")
+    monkeypatch.setattr(config, "http_remote_hosted", False)
+
+    ctx = Mock()
+    ctx.get_state = AsyncMock(return_value=None)
+
+    execute_result = await execute_custom_tool(ctx, "my_tool", {})
+    resource_result = await get_custom_tools(ctx)
+
+    for result in (execute_result, resource_result):
+        assert result.success is False
+        assert "set_active_instance" not in result.message
+        assert "unity_session=<project-path-hash>" in result.message
+
+
+@pytest.mark.asyncio
 async def test_custom_tools_resource_threads_user_id_from_context(monkeypatch):
     monkeypatch.setattr(config, "http_remote_hosted", True)
 

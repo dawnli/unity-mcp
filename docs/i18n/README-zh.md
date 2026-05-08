@@ -75,13 +75,14 @@ openupm add com.coplaydev.unity-mcp
 ```
 </details>
 
-### 2. 启动服务器并连接
+### 2. 启动项目服务器并连接
 
-1. 在 Unity 中：`Window > MCP for Unity`
-2. 点击 **Start Server**（会在 `localhost:8080` 启动 HTTP 服务器）
-3. 从下拉菜单选择你的 MCP Client，然后点击 **Configure**
-4. 查找 🟢 "Connected ✓"
-5. **连接你的客户端：** 一些客户端（Cursor、Antigravity、OpenClaw）需要在设置里启用 MCP 开关或插件。OpenClaw 还需要启用 `openclaw-mcp-bridge` 插件，并会跟随 MCP for Unity 当前选择的传输方式（HTTP 或 stdio）；另一些（Claude Desktop、Claude Code）在配置后会自动连接。
+1. 通过你的外围启动器启动共享 MCP server，或者运行 `python tools/start_shared_mcp_server.py`。该脚本会后台启动 server，并复用已在 `127.0.0.1:8080` 运行的 Unity MCP server。
+2. 在 Unity 中：`Window > MCP for Unity`
+3. 点击 **Start Session**。Unity 会用归一化后的项目根路径绝对路径 hash 作为稳定 session id；如果共享 server 不在线，界面会显示 "Server Not Started"。
+4. 从下拉菜单选择你的 MCP Client，然后点击 **Configure**
+5. 查找 🟢 "Connected ✓"
+6. **连接你的客户端：** 一些客户端（Cursor、Antigravity、OpenClaw）需要在设置里启用 MCP 开关或插件。OpenClaw 还需要启用 `openclaw-mcp-bridge` 插件，并会跟随 MCP for Unity 当前选择的传输方式（HTTP 或 stdio）；另一些（Claude Desktop、Claude Code）在配置后会自动连接。
 
 **就这些！** 试试这样的提示词：*"Create a red, blue and yellow cube"* 或 *"Build a simple player controller"*
 
@@ -108,14 +109,14 @@ openupm add com.coplaydev.unity-mcp
 <details>
 <summary><strong>手动配置</strong></summary>
 
-如果自动设置不生效，请把下面内容添加到你的 MCP Client 配置文件中：
+如果自动设置不生效，请把下面内容添加到你的 MCP Client 配置文件中。使用 MCP for Unity 窗口里当前项目显示的 URL：
 
 **HTTP（默认 — 适用于 Claude Desktop、Cursor、Windsurf）：**
 ```json
 {
   "mcpServers": {
     "unityMCP": {
-      "url": "http://localhost:8080/mcp"
+      "url": "http://127.0.0.1:8080/mcp?unity_session=<project-path-hash>"
     }
   }
 }
@@ -127,7 +128,7 @@ openupm add com.coplaydev.unity-mcp
   "servers": {
     "unityMCP": {
       "type": "http",
-      "url": "http://localhost:8080/mcp"
+      "url": "http://127.0.0.1:8080/mcp?unity_session=<project-path-hash>"
     }
   }
 }
@@ -165,11 +166,12 @@ openupm add com.coplaydev.unity-mcp
 <details>
 <summary><strong>多个 Unity 实例</strong></summary>
 
-MCP for Unity 支持多个 Unity Editor 实例。要将操作定向到某个特定实例：
+MCP for Unity 支持多个 Unity Editor 实例。HTTP Local 模式下推荐使用一个共享 server：
 
-1. 让你的大语言模型检查 `unity_instances` 资源
-2. 使用 `set_active_instance` 并传入 `Name@hash`（例如 `MyProject@abc123`）
-3. 后续所有工具都会路由到该实例
+1. 只运行一个共享 server，例如 `http://127.0.0.1:8080/mcp`
+2. 从每个 Unity 项目里配置 AI client。生成的 URL 会包含 `?unity_session=<project-path-hash>`
+3. session hash 会选择对应 Unity 项目；本地多项目工作流不需要 `set_active_instance`
+4. 如需在 Unity 外计算同一个 hash，运行 `python tools/project_path_hash.py /absolute/path/to/UnityProject`
 </details>
 
 <details>

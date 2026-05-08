@@ -24,6 +24,14 @@ async def set_active_instance(
         instance: Annotated[str, "Target instance (Name@hash, hash prefix, or port number in stdio mode)"]
 ) -> dict[str, Any]:
     transport = (config.transport_mode or "stdio").lower()
+    if transport == "http" and not config.http_remote_hosted:
+        return {
+            "success": True,
+            "message": "Local HTTP routing uses the unity_session URL query/header; no active instance selection is required.",
+            "data": {
+                "routing": "unity_session",
+            },
+        }
 
     # Port number shorthand (stdio only) — resolve to Name@hash via pool discovery
     value = (instance or "").strip()

@@ -95,27 +95,13 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
                 McpLog.Error($"[WebSocket] {message}");
                 return false;
             }
-
-            // Get project root path (strip /Assets from dataPath) for focus nudging
-            string dataPath = Application.dataPath;
-            if (!string.IsNullOrEmpty(dataPath))
-            {
-                string normalized = dataPath.TrimEnd('/', '\\');
-                if (string.Equals(System.IO.Path.GetFileName(normalized), "Assets", StringComparison.Ordinal))
-                {
-                    _projectPath = System.IO.Path.GetDirectoryName(normalized) ?? normalized;
-                }
-                else
-                {
-                    _projectPath = normalized;  // Fallback if path doesn't end with Assets
-                }
-            }
+            _projectPath = ProjectIdentityUtility.GetProjectRootPath();
 
             await StopAsync();
 
             _lifecycleCts = new CancellationTokenSource();
             _endpointUri = BuildWebSocketUri(HttpEndpointUtility.GetBaseUrl());
-            _sessionId = null;
+            _sessionId = ProjectIdentityUtility.GetOrCreateSessionId();
 
             if (!await EstablishConnectionAsync(_lifecycleCts.Token))
             {
@@ -695,7 +681,7 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
             var registerPayload = new JObject
             {
                 ["type"] = "register",
-                // session_id is now server-authoritative; omitted here or sent as null
+                ["session_id"] = _sessionId,
                 ["project_name"] = _projectName,
                 ["project_hash"] = _projectHash,
                 ["unity_version"] = _unityVersion,

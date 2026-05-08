@@ -56,7 +56,6 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
         private string cachedLoginUrl;
 
         private bool connectionToggleInProgress;
-        private bool httpServerToggleInProgress;
         private Task verificationTask;
         private string lastHealthStatus;
         private double lastLocalServerRunningPollTime;
@@ -149,7 +148,7 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
 
             // Set tooltips
             if (httpUrlField != null)
-                httpUrlField.tooltip = "HTTP endpoint URL for the MCP server. Use localhost for local servers.";
+                httpUrlField.tooltip = "HTTP endpoint URL for the MCP server. HTTP Local uses the fixed shared endpoint.";
             if (unityPortField != null)
                 unityPortField.tooltip = "Port for Unity's internal MCP bridge socket. Used for stdio transport.";
             if (connectionToggleButton != null)
@@ -309,6 +308,13 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
                 return;
             }
 
+            if (!HttpEndpointUtility.IsRemoteScope())
+            {
+                httpUrlField.SetValueWithoutNotify(HttpEndpointUtility.GetLocalBaseUrl());
+                RefreshHttpUi();
+                return;
+            }
+
             HttpEndpointUtility.SaveBaseUrl(httpUrlField.text);
             // Update displayed value to normalized form without re-triggering callbacks/caret jumps.
             httpUrlField.SetValueWithoutNotify(HttpEndpointUtility.GetBaseUrl());
@@ -342,14 +348,10 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
                 isRunning = false; // Update local state for the rest of this method
             }
 
-            // For HTTP Local: show session toggle button only when server is running (so user can manually start/end session).
-            // For Stdio/HTTP Remote: always show the session toggle button.
-            // This separates server lifecycle from session lifecycle for multi-instance scenarios.
-            // We use lastLocalServerRunning which was just refreshed by UpdateStartHttpButtonState() above.
+            // Server lifecycle is external in HTTP Local; Unity always shows only the session control.
             if (connectionToggleButton != null)
             {
-                bool showSessionToggle = !showLocalServerControls || lastLocalServerRunning;
-                connectionToggleButton.style.display = showSessionToggle ? DisplayStyle.Flex : DisplayStyle.None;
+                connectionToggleButton.style.display = DisplayStyle.Flex;
             }
 
             if (isRunning)
@@ -389,7 +391,13 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
                 }
                 else
                 {
-                    connectionStatusLabel.text = "No Session";
+                    bool httpLocalSelected = IsHttpLocalSelected();
+                    string localUrlError = null;
+                    bool localUrlAllowed = !httpLocalSelected
+                        || TryGetLocalHttpConnectionPolicy(out _, out localUrlError);
+                    connectionStatusLabel.text = httpLocalSelected && !localUrlAllowed
+                        ? "Server Not Started"
+                        : "No Session";
                     statusIndicator.RemoveFromClassList("connected");
                     statusIndicator.AddToClassList("disconnected");
                     connectionToggleButton.text = "Start Session";
@@ -401,11 +409,6 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
                     string remoteUrlError = null;
                     bool remoteUrlAllowed = !httpRemoteSelected
                         || HttpEndpointUtility.IsCurrentRemoteUrlAllowed(out remoteUrlError);
-
-                    bool httpLocalSelected = IsHttpLocalSelected();
-                    string localUrlError = null;
-                    bool localUrlAllowed = !httpLocalSelected
-                        || TryGetLocalHttpLaunchPolicy(out _, out localUrlError);
 
                     bool blockedByRemoteUrlPolicy = httpRemoteSelected && !remoteUrlAllowed;
                     bool blockedByLocalUrlPolicy = httpLocalSelected && !localUrlAllowed;
@@ -439,7 +442,7 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
             }
 
             // For stdio session toggling, make End Session visually "danger" (red).
-            // (HTTP Local uses the consolidated Start/Stop Server button instead.)
+            // HTTP Local only exposes session control; the server lifecycle is external.
             connectionToggleButton?.EnableInClassList("server-running", isRunning && stdioSelected);
         }
 
@@ -450,94 +453,34 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
                 return;
             }
 
-            bool useHttp = transportDropdown != null && (TransportProtocol)transportDropdown.value != TransportProtocol.Stdio;
-            bool httpLocalSelected = IsHttpLocalSelected();
-            bool isLocalHttpUrlAllowed = TryGetLocalHttpLaunchPolicy(out _, out string localUrlError);
-
-            // Only show the local-server helper UI when HTTP Local is selected.
-            if (!useHttp || !httpLocalSelected)
-            {
-                httpServerCommandSection.style.display = DisplayStyle.None;
-                httpServerCommandField.value = string.Empty;
-                httpServerCommandField.tooltip = string.Empty;
-                httpServerCommandField.SetEnabled(false);
-                if (httpServerCommandHint != null)
-                {
-                    httpServerCommandHint.text = string.Empty;
-                }
-                if (copyHttpServerCommandButton != null)
-                {
-                    copyHttpServerCommandButton.SetEnabled(false);
-                }
-                return;
-            }
-
-            httpServerCommandSection.style.display = DisplayStyle.Flex;
-
-            if (!isLocalHttpUrlAllowed)
-            {
-                httpServerCommandField.value = string.Empty;
-                httpServerCommandField.tooltip = string.Empty;
-                httpServerCommandField.SetEnabled(false);
-                httpServerCommandSection.EnableInClassList("http-local-invalid-url", true);
-                if (httpServerCommandHint != null)
-                {
-                    string requirements = HttpEndpointUtility.GetHttpLocalHostRequirementText();
-                    httpServerCommandHint.text = $"⚠ {localUrlError ?? $"HTTP Local requires a loopback URL ({requirements})."}";
-                    httpServerCommandHint.AddToClassList("http-local-url-error");
-                }
-                copyHttpServerCommandButton?.SetEnabled(false);
-                return;
-            }
-
-            httpServerCommandSection.EnableInClassList("http-local-invalid-url", false);
-            httpServerCommandField.SetEnabled(true);
+            httpServerCommandSection.style.display = DisplayStyle.None;
+            httpServerCommandField.value = string.Empty;
+            httpServerCommandField.tooltip = string.Empty;
+            httpServerCommandField.SetEnabled(false);
             if (httpServerCommandHint != null)
             {
-                httpServerCommandHint.RemoveFromClassList("http-local-url-error");
+                httpServerCommandHint.text = string.Empty;
             }
-
-            if (MCPServiceLocator.Server.TryGetLocalHttpServerCommand(out var command, out var error))
+            httpServerCommandSection.EnableInClassList("http-local-invalid-url", false);
+            if (copyHttpServerCommandButton != null)
             {
-                httpServerCommandField.value = command;
-                httpServerCommandField.tooltip = command;
-                if (httpServerCommandHint != null)
-                {
-                    httpServerCommandHint.text = "Run this command in your shell if you prefer to start the server manually.";
-                }
-                if (copyHttpServerCommandButton != null)
-                {
-                    copyHttpServerCommandButton.SetEnabled(true);
-                }
-            }
-            else
-            {
-                httpServerCommandField.value = string.Empty;
-                httpServerCommandField.tooltip = string.Empty;
-                if (httpServerCommandHint != null)
-                {
-                    httpServerCommandHint.text = error ?? "The command is not available with the current configuration.";
-                }
-                if (copyHttpServerCommandButton != null)
-                {
-                    copyHttpServerCommandButton.SetEnabled(false);
-                }
+                copyHttpServerCommandButton.SetEnabled(false);
             }
         }
 
         private void UpdateHttpFieldVisibility()
         {
             bool useHttp = (TransportProtocol)transportDropdown.value != TransportProtocol.Stdio;
-            bool httpLocalSelected = IsHttpLocalSelected();
             bool httpRemoteSelected = transportDropdown != null && (TransportProtocol)transportDropdown.value == TransportProtocol.HTTPRemote;
 
-            httpUrlRow.style.display = useHttp ? DisplayStyle.Flex : DisplayStyle.None;
-            httpServerControlRow.style.display = useHttp && httpLocalSelected ? DisplayStyle.Flex : DisplayStyle.None;
+            httpUrlRow.style.display = httpRemoteSelected ? DisplayStyle.Flex : DisplayStyle.None;
+            httpServerControlRow.style.display = DisplayStyle.None;
             unitySocketPortRow.style.display = useHttp ? DisplayStyle.None : DisplayStyle.Flex;
+            httpUrlField?.SetEnabled(useHttp && httpRemoteSelected);
 
-            // Manual Server Launch foldout only relevant for HTTP Local
+            // HTTP Local server launch is managed by the external project launcher.
             if (manualCommandFoldout != null)
-                manualCommandFoldout.style.display = httpLocalSelected ? DisplayStyle.Flex : DisplayStyle.None;
+                manualCommandFoldout.style.display = DisplayStyle.None;
 
             // API key fields only visible in HTTP Remote mode
             if (apiKeyRow != null)
@@ -549,10 +492,21 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
             return transportDropdown != null && (TransportProtocol)transportDropdown.value == TransportProtocol.HTTPLocal;
         }
 
-        private bool TryGetLocalHttpLaunchPolicy(out string localBaseUrl, out string localUrlError)
+        private bool TryGetLocalHttpConnectionPolicy(out string localBaseUrl, out string localUrlError)
         {
             localBaseUrl = HttpEndpointUtility.GetLocalBaseUrl();
-            return HttpEndpointUtility.IsHttpLocalUrlAllowedForLaunch(localBaseUrl, out localUrlError);
+            if (!HttpEndpointUtility.IsHttpLocalUrlAllowedForLaunch(localBaseUrl, out localUrlError))
+            {
+                return false;
+            }
+
+            if (!MCPServiceLocator.Server.IsLocalHttpServerReachable())
+            {
+                localUrlError = $"Server Not Started. Start the shared MCP server at {localBaseUrl}.";
+                return false;
+            }
+
+            return true;
         }
 
         private void SyncUrlFieldToScope()
@@ -576,15 +530,15 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
             }
 
             bool httpLocalSelected = IsHttpLocalSelected();
-            bool localUrlAllowedForLaunch = TryGetLocalHttpLaunchPolicy(out _, out string localUrlError);
-            bool canStartLocalServer = httpLocalSelected && localUrlAllowedForLaunch;
+            bool localEndpointReady = TryGetLocalHttpConnectionPolicy(out _, out string localUrlError);
+            bool canConnectLocalServer = httpLocalSelected && localEndpointReady;
             bool localServerRunning = false;
 
             // Avoid running expensive port/PID checks every UI tick; use a fast socket probe for UI state.
             if (httpLocalSelected)
             {
                 double now = EditorApplication.timeSinceStartup;
-                if ((now - lastLocalServerRunningPollTime) > 0.75f || httpServerToggleInProgress)
+                if ((now - lastLocalServerRunningPollTime) > 0.75f)
                 {
                     lastLocalServerRunningPollTime = now;
                     lastLocalServerRunning = MCPServiceLocator.Server.IsLocalHttpServerReachable();
@@ -592,18 +546,13 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
                 localServerRunning = lastLocalServerRunning;
             }
 
-            // Server button only controls server lifecycle (Start/Stop Server).
-            // Session lifecycle is handled by the separate connectionToggleButton.
             bool shouldShowStop = localServerRunning;
-            startHttpServerButton.text = shouldShowStop ? "Stop Server" : "Start Server";
-            // Note: Server logs may contain transient HTTP 400s on /mcp during startup probing and
-            // CancelledError stack traces on shutdown when streaming requests are cancelled; this is expected.
+            startHttpServerButton.text = shouldShowStop ? "Server Running" : "Server External";
             startHttpServerButton.EnableInClassList("server-running", localServerRunning);
-            startHttpServerButton.SetEnabled(
-                !httpServerToggleInProgress && (shouldShowStop || canStartLocalServer));
+            startHttpServerButton.SetEnabled(false);
             startHttpServerButton.tooltip = httpLocalSelected
-                ? (canStartLocalServer
-                    ? string.Empty
+                ? (canConnectLocalServer
+                    ? "HTTP Local server startup is managed by the external launcher."
                     : localUrlError ?? $"HTTP Local requires a loopback URL ({HttpEndpointUtility.GetHttpLocalHostRequirementText()}).")
                 : string.Empty;
         }
@@ -614,124 +563,12 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
             UpdateHttpServerCommandDisplay();
         }
 
-        private async void OnHttpServerToggleClicked()
+        private void OnHttpServerToggleClicked()
         {
-            if (httpServerToggleInProgress)
-            {
-                return;
-            }
-
-            var bridgeService = MCPServiceLocator.Bridge;
-            httpServerToggleInProgress = true;
-            startHttpServerButton?.SetEnabled(false);
-
-            try
-            {
-                // Check if a local server is running.
-                bool serverRunning = IsHttpLocalSelected() && MCPServiceLocator.Server.IsLocalHttpServerReachable();
-
-                if (serverRunning)
-                {
-                    // Stop Server: end session first (if active), then stop the server.
-                    if (bridgeService.IsRunning)
-                    {
-                        await bridgeService.StopAsync();
-                    }
-                    bool stopped = MCPServiceLocator.Server.StopLocalHttpServer();
-                    if (!stopped)
-                    {
-                        McpLog.Warn("Failed to stop HTTP server or no server was running");
-                    }
-                }
-                else
-                {
-                    // Start Server: launch the local HTTP server.
-                    // When WE start the server, auto-start our session (we clearly want to use it).
-                    // This differs from detecting an already-running server, where we require manual session start.
-                    if (!TryGetLocalHttpLaunchPolicy(out _, out string localPolicyError))
-                    {
-                        string errorMsg = localPolicyError ?? "HTTP Local URL is blocked by current security settings.";
-                        EditorUtility.DisplayDialog("Cannot Start HTTP Server", errorMsg, "OK");
-                        McpLog.Warn($"Start server blocked by local URL security policy: {errorMsg}");
-                        return;
-                    }
-
-                    bool serverStarted = MCPServiceLocator.Server.StartLocalHttpServer();
-                    if (serverStarted)
-                    {
-                        await TryAutoStartSessionAsync();
-                    }
-                    else
-                    {
-                        McpLog.Warn("Failed to start local HTTP server");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                McpLog.Error($"HTTP server toggle failed: {ex.Message}");
-                EditorUtility.DisplayDialog("Error", $"Failed to toggle local HTTP server:\n\n{ex.Message}", "OK");
-            }
-            finally
-            {
-                httpServerToggleInProgress = false;
-                RefreshHttpUi();
-                UpdateConnectionStatus();
-            }
-        }
-
-        private async Task TryAutoStartSessionAsync()
-        {
-            // Wait briefly for the HTTP server to become ready, then start the session.
-            // This is called when THIS instance starts the server (not when detecting an external server).
-            var bridgeService = MCPServiceLocator.Bridge;
-            // Windows/dev mode may take much longer due to uv package resolution, fresh downloads, antivirus scans, etc.
-            const int maxAttempts = 30;
-            // Use shorter delays initially, then longer delays to allow server startup
-            var shortDelay = TimeSpan.FromMilliseconds(500);
-            var longDelay = TimeSpan.FromSeconds(3);
-
-            for (int attempt = 0; attempt < maxAttempts; attempt++)
-            {
-                var delay = attempt < 6 ? shortDelay : longDelay;
-
-                // Check if server is actually accepting connections
-                bool serverDetected = MCPServiceLocator.Server.IsLocalHttpServerReachable();
-
-                if (serverDetected)
-                {
-                    // Server detected - try to connect
-                    bool started = await bridgeService.StartAsync();
-                    if (started)
-                    {
-                        await VerifyBridgeConnectionAsync();
-                        UpdateConnectionStatus();
-                        return;
-                    }
-                }
-                else if (attempt >= 20)
-                {
-                    // After many attempts without detection, try connecting anyway as a last resort.
-                    // This handles cases where process detection fails but the server is actually running.
-                    // Only try once every 3 attempts to avoid spamming connection errors (at attempts 20, 23, 26, 29).
-                    if ((attempt - 20) % 3 != 0) continue;
-
-                    bool started = await bridgeService.StartAsync();
-                    if (started)
-                    {
-                        await VerifyBridgeConnectionAsync();
-                        UpdateConnectionStatus();
-                        return;
-                    }
-                }
-
-                if (attempt < maxAttempts - 1)
-                {
-                    await Task.Delay(delay);
-                }
-            }
-
-            McpLog.Warn("Failed to auto-start session after launching the HTTP server.");
+            EditorUtility.DisplayDialog(
+                "Server Managed Externally",
+                "HTTP Local server startup is managed by the external launcher. Use Start Session after the shared server is running.",
+                "OK");
         }
 
         private void PersistUnityPortFromField()
@@ -803,7 +640,7 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
 
                     bool httpLocalSelected = IsHttpLocalSelected();
                     if (httpLocalSelected
-                        && !TryGetLocalHttpLaunchPolicy(out _, out string localPolicyError))
+                        && !TryGetLocalHttpConnectionPolicy(out _, out string localPolicyError))
                     {
                         string errorMsg = localPolicyError ?? "HTTP Local URL is blocked by current security settings.";
                         EditorUtility.DisplayDialog("Connection Blocked", errorMsg, "OK");

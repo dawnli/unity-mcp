@@ -12,15 +12,15 @@ namespace MCPForUnity.Editor.Helpers
     /// Ensures the stored value is always the base URL (without trailing path),
     /// and provides convenience accessors for specific endpoints.
     ///
-    /// HTTP Local and HTTP Remote use separate EditorPrefs keys so that switching
-    /// between scopes does not overwrite the other scope's URL.
+    /// HTTP Local uses a fixed shared endpoint; HTTP Remote stores a separate URL
+    /// so switching scopes does not overwrite the local address.
     /// </summary>
     public static class HttpEndpointUtility
     {
-        private const string LocalPrefKey = EditorPrefKeys.HttpBaseUrl;
         private const string RemotePrefKey = EditorPrefKeys.HttpRemoteBaseUrl;
-        private const string DefaultLocalBaseUrl = "http://127.0.0.1:8080";
+        public const string FixedLocalBaseUrl = "http://127.0.0.1:8080";
         private const string DefaultRemoteBaseUrl = "";
+        private const string UnitySessionQueryName = "unity_session";
 
         /// <summary>
         /// Returns the normalized base URL for the currently active HTTP scope.
@@ -47,21 +47,19 @@ namespace MCPForUnity.Editor.Helpers
         }
 
         /// <summary>
-        /// Returns the normalized local HTTP base URL (always reads local pref).
+        /// Returns the fixed shared local HTTP base URL.
         /// </summary>
         public static string GetLocalBaseUrl()
         {
-            string stored = EditorPrefs.GetString(LocalPrefKey, DefaultLocalBaseUrl);
-            return NormalizeBaseUrl(stored, DefaultLocalBaseUrl, remoteScope: false);
+            return FixedLocalBaseUrl;
         }
 
         /// <summary>
-        /// Saves a user-provided URL to the local HTTP pref.
+        /// HTTP Local always uses the fixed shared server endpoint.
         /// </summary>
         public static void SaveLocalBaseUrl(string userValue)
         {
-            string normalized = NormalizeBaseUrl(userValue, DefaultLocalBaseUrl, remoteScope: false);
-            EditorPrefs.SetString(LocalPrefKey, normalized);
+            // Kept as a no-op for older callers; local endpoint drift is not allowed.
         }
 
         /// <summary>
@@ -97,7 +95,8 @@ namespace MCPForUnity.Editor.Helpers
         /// </summary>
         public static string GetMcpRpcUrl()
         {
-            return AppendPathSegment(GetBaseUrl(), "mcp");
+            string endpoint = AppendPathSegment(GetBaseUrl(), "mcp");
+            return IsRemoteScope() ? endpoint : AppendUnitySessionQuery(endpoint);
         }
 
         /// <summary>
@@ -105,7 +104,7 @@ namespace MCPForUnity.Editor.Helpers
         /// </summary>
         public static string GetLocalMcpRpcUrl()
         {
-            return AppendPathSegment(GetLocalBaseUrl(), "mcp");
+            return AppendUnitySessionQuery(AppendPathSegment(GetLocalBaseUrl(), "mcp"));
         }
 
         /// <summary>
@@ -115,7 +114,9 @@ namespace MCPForUnity.Editor.Helpers
         public static string GetRemoteMcpRpcUrl()
         {
             string remoteBase = GetRemoteBaseUrl();
-            return string.IsNullOrEmpty(remoteBase) ? string.Empty : AppendPathSegment(remoteBase, "mcp");
+            return string.IsNullOrEmpty(remoteBase)
+                ? string.Empty
+                : AppendPathSegment(remoteBase, "mcp");
         }
 
         /// <summary>
@@ -352,7 +353,28 @@ namespace MCPForUnity.Editor.Helpers
 
         private static string AppendPathSegment(string baseUrl, string segment)
         {
+            if (string.IsNullOrWhiteSpace(baseUrl))
+            {
+                return string.Empty;
+            }
             return $"{baseUrl.TrimEnd('/')}/{segment}";
+        }
+
+        private static string AppendUnitySessionQuery(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return string.Empty;
+            }
+
+            string sessionHash = ProjectIdentityUtility.GetProjectHash();
+            if (string.IsNullOrWhiteSpace(sessionHash) || sessionHash == "default")
+            {
+                return url;
+            }
+
+            char separator = url.Contains("?") ? '&' : '?';
+            return $"{url}{separator}{UnitySessionQueryName}={Uri.EscapeDataString(sessionHash)}";
         }
     }
 }

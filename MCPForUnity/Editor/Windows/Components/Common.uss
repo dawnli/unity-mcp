@@ -208,7 +208,7 @@
     background-color: rgba(30, 120, 200, 1);
 }
 
-/* Start Server button in the manual config section should align flush left like other full-width controls */
+/* External server indicator in the manual config section should align flush left like other full-width controls */
 .start-server-button {
     margin-left: 0px;
 }

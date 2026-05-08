@@ -10,8 +10,8 @@ using UnityEngine;
 namespace MCPForUnity.Editor.Services
 {
     /// <summary>
-    /// Automatically starts the HTTP MCP bridge on editor load when the user has opted in
-    /// via the "Auto-Start on Editor Load" toggle in Advanced Settings.
+    /// Automatically reconnects the HTTP MCP bridge on editor load when an externally
+    /// managed local endpoint is available, or when remote auto-connect is enabled.
     /// This complements HttpBridgeReloadHandler (which only resumes after domain reloads).
     /// </summary>
     [InitializeOnLoad]
@@ -31,11 +31,6 @@ namespace MCPForUnity.Editor.Services
                 return;
             }
 
-            // Only check lightweight EditorPrefs here — services like EditorConfigurationCache
-            // and MCPServiceLocator may not be initialized yet on fresh editor launch.
-            bool autoStartEnabled = EditorPrefs.GetBool(EditorPrefKeys.AutoStartOnLoad, false);
-            if (!autoStartEnabled) return;
-
             SessionState.SetBool(SessionInitKey, true);
 
             // Delay to let the editor and services finish initialization.
@@ -46,14 +41,20 @@ namespace MCPForUnity.Editor.Services
         {
             try
             {
-                bool autoStartEnabled = EditorPrefs.GetBool(EditorPrefKeys.AutoStartOnLoad, false);
-                if (!autoStartEnabled) return;
-
                 bool useHttp = EditorConfigurationCache.Instance.UseHttpTransport;
                 if (!useHttp) return;
 
                 // Don't auto-start if bridge is already running.
                 if (MCPServiceLocator.TransportManager.IsRunning(TransportMode.Http)) return;
+
+                bool isLocal = !HttpEndpointUtility.IsRemoteScope();
+                bool autoStartEnabled = EditorPrefs.GetBool(EditorPrefKeys.AutoStartOnLoad, false);
+                if (!isLocal && !autoStartEnabled) return;
+                if (isLocal && !MCPServiceLocator.Server.IsLocalHttpServerReachable())
+                {
+                    McpLog.Info("[HTTP Auto-Start] Server Not Started: fixed local HTTP endpoint is not reachable.");
+                    return;
+                }
 
                 _ = AutoStartAsync();
             }
@@ -71,27 +72,13 @@ namespace MCPForUnity.Editor.Services
 
                 if (isLocal)
                 {
-                    // For HTTP Local: launch the server process first, then connect the bridge.
-                    // This mirrors what the UI "Start Server" button does.
-                    if (!HttpEndpointUtility.IsHttpLocalUrlAllowedForLaunch(
-                            HttpEndpointUtility.GetLocalBaseUrl(), out string policyError))
+                    // For HTTP Local: the server lifecycle is external. Unity only reconnects the session.
+                    if (!MCPServiceLocator.Server.IsLocalHttpServerReachable())
                     {
-                        McpLog.Debug($"[HTTP Auto-Start] Local URL blocked by security policy: {policyError}");
+                        McpLog.Info("[HTTP Auto-Start] Server Not Started: fixed local HTTP endpoint is not reachable.");
                         return;
                     }
 
-                    // Check if server is already reachable (e.g. user started it externally).
-                    if (!MCPServiceLocator.Server.IsLocalHttpServerReachable())
-                    {
-                        bool serverStarted = MCPServiceLocator.Server.StartLocalHttpServer(quiet: true);
-                        if (!serverStarted)
-                        {
-                            McpLog.Warn("[HTTP Auto-Start] Failed to start local HTTP server");
-                            return;
-                        }
-                    }
-
-                    // Wait for the server to become reachable, then connect.
                     await WaitForServerAndConnectAsync();
                 }
                 else
@@ -108,7 +95,7 @@ namespace MCPForUnity.Editor.Services
 
         /// <summary>
         /// Waits for the local HTTP server to accept connections, then connects the bridge.
-        /// Mirrors TryAutoStartSessionAsync in McpConnectionSection.
+        /// The server process itself is never started here; local HTTP lifecycle is external.
         /// </summary>
         private static async Task WaitForServerAndConnectAsync()
         {
@@ -119,7 +106,6 @@ namespace MCPForUnity.Editor.Services
             for (int attempt = 0; attempt < maxAttempts; attempt++)
             {
                 // Abort if user changed settings while we were waiting.
-                if (!EditorPrefs.GetBool(EditorPrefKeys.AutoStartOnLoad, false)) return;
                 if (!EditorConfigurationCache.Instance.UseHttpTransport) return;
                 if (MCPServiceLocator.TransportManager.IsRunning(TransportMode.Http)) return;
 
@@ -152,7 +138,7 @@ namespace MCPForUnity.Editor.Services
                 catch { return; }
             }
 
-            McpLog.Warn("[HTTP Auto-Start] Server did not become reachable after launch");
+            McpLog.Warn("[HTTP Auto-Start] Fixed shared server did not become reachable");
         }
 
         /// <summary>

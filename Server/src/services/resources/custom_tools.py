@@ -5,6 +5,7 @@ from models import MCPResponse
 from services.custom_tool_service import (
     CustomToolService,
     get_user_id_from_context,
+    no_active_unity_instance_message,
     resolve_project_id_for_unity_instance,
     ToolDefinitionModel,
 )
@@ -32,7 +33,7 @@ async def get_custom_tools(ctx: Context) -> CustomToolsResourceResponse | MCPRes
     if not unity_instance:
         return MCPResponse(
             success=False,
-            message="No active Unity instance. Call set_active_instance with Name@hash from mcpforunity://instances.",
+            message=no_active_unity_instance_message(),
         )
 
     project_id = resolve_project_id_for_unity_instance(unity_instance)
