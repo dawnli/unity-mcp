@@ -36,6 +36,7 @@ The window has four areas: Server Status, Unity Bridge, MCP Client Configuration
 - HTTP Server Command foldout:
   - Expands to display the exact `uvx` command Unity will run.
   - Includes a copy button and the “Start Local HTTP Server” action so you can launch or reuse the command elsewhere.
+  - The Python HTTP server has its own startup version guard. When launched externally via `uv`/`uvx`, it checks the running local server’s `/health` version before binding the port: same version exits successfully and reuses the existing server; different version stops the older MCP for Unity server and starts the current one. Bump the Python server version whenever server behavior changes.
 
 ---
 

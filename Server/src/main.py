@@ -19,6 +19,11 @@ from starlette.routing import WebSocketRoute
 from starlette.responses import JSONResponse
 import argparse
 import asyncio
+import json
+import signal
+import socket
+import subprocess
+import urllib.request
 
 # Fix to IPV4 Connection Issue #853
 # Will disable features in ProactorEventLoop including subprocess pipes and named pipes
@@ -385,6 +390,7 @@ def create_mcp_server(project_scoped_tools: bool) -> FastMCP:
             "status": "healthy",
             "timestamp": time.time(),
             "version": _server_version or "unknown",
+            "pid": os.getpid(),
             "message": "MCP for Unity server is running"
         })
 
@@ -648,6 +654,137 @@ def create_mcp_server(project_scoped_tools: bool) -> FastMCP:
     return mcp
 
 
+def _http_probe_host(host: str | None) -> str:
+    normalized = (host or "127.0.0.1").strip().strip("[]").lower()
+    if normalized in ("localhost", "0.0.0.0", "::", "0:0:0:0:0:0:0:0"):
+        return "127.0.0.1"
+    if normalized == "::1":
+        return "::1"
+    return host or "127.0.0.1"
+
+
+def _build_health_url(host: str | None, port: int) -> str:
+    probe_host = _http_probe_host(host)
+    if ":" in probe_host and not probe_host.startswith("["):
+        probe_host = f"[{probe_host}]"
+    return f"http://{probe_host}:{port}/health"
+
+
+def _read_existing_http_server_health(host: str | None, port: int) -> dict[str, Any] | None:
+    try:
+        request = urllib.request.Request(_build_health_url(host, port), method="GET")
+        with urllib.request.urlopen(request, timeout=0.5) as response:
+            if response.status < 200 or response.status >= 300:
+                return None
+            return json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return None
+
+
+def _endpoint_has_port(endpoint: str, port: int) -> bool:
+    try:
+        return int(endpoint.rsplit(":", 1)[1]) == port
+    except Exception:
+        return False
+
+
+def _find_listening_pid(port: int) -> int | None:
+    if sys.platform != "win32":
+        return None
+
+    try:
+        result = subprocess.run(
+            ["netstat", "-ano", "-p", "tcp"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except Exception:
+        return None
+
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 5:
+            continue
+        if parts[0].upper() != "TCP" or parts[-2].upper() != "LISTENING":
+            continue
+        if _endpoint_has_port(parts[1], port):
+            try:
+                return int(parts[-1])
+            except ValueError:
+                return None
+    return None
+
+
+def _is_mcp_for_unity_health(health: dict[str, Any]) -> bool:
+    message = str(health.get("message") or "")
+    return "mcp for unity" in message.lower()
+
+
+def _is_port_reachable(host: str | None, port: int) -> bool:
+    try:
+        with socket.create_connection((_http_probe_host(host), port), timeout=0.2):
+            return True
+    except OSError:
+        return False
+
+
+def _terminate_existing_http_server(host: str | None, port: int, health: dict[str, Any]) -> bool:
+    pid = health.get("pid")
+    if not isinstance(pid, int) or pid <= 0:
+        pid = _find_listening_pid(port)
+
+    if not pid or pid == os.getpid():
+        return False
+
+    try:
+        logger.info("Stopping older MCP for Unity HTTP server on port %s (PID: %s)", port, pid)
+        os.kill(pid, signal.SIGTERM)
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            if not _is_port_reachable(host, port):
+                return True
+            time.sleep(0.1)
+
+        if hasattr(signal, "SIGKILL"):
+            os.kill(pid, signal.SIGKILL)
+            time.sleep(0.2)
+        return not _is_port_reachable(host, port)
+    except Exception as exc:
+        logger.warning("Failed to stop existing MCP for Unity server PID %s: %s", pid, exc)
+        return False
+
+
+def _should_start_http_server(host: str | None, port: int, current_version: str) -> bool:
+    health = _read_existing_http_server_health(host, port)
+    if not health:
+        return True
+    if not _is_mcp_for_unity_health(health):
+        return True
+
+    running_version = str(health.get("version") or "").strip().lstrip("vV")
+    expected_version = str(current_version or "").strip().lstrip("vV")
+    if running_version and expected_version and running_version.lower() == expected_version.lower():
+        logger.info(
+            "MCP for Unity HTTP server v%s is already running on port %s; startup ignored.",
+            health.get("version"),
+            port,
+        )
+        return False
+
+    logger.info(
+        "MCP for Unity HTTP server version mismatch on port %s: running=%s, expected=%s",
+        port,
+        health.get("version") or "unknown",
+        current_version or "unknown",
+    )
+    if not _terminate_existing_http_server(host, port, health):
+        logger.error("Could not stop older MCP for Unity HTTP server on port %s", port)
+        raise SystemExit(1)
+    return True
+
+
 def main():
     """Entry point for uvx and console scripts."""
     parser = argparse.ArgumentParser(
@@ -863,6 +1000,11 @@ Examples:
 
     os.environ["UNITY_MCP_HTTP_HOST"] = http_host
     os.environ["UNITY_MCP_HTTP_PORT"] = str(http_port)
+
+    current_server_version = get_package_version()
+    if config.transport_mode == "http" and not config.http_remote_hosted:
+        if not _should_start_http_server(http_host, http_port, current_server_version):
+            raise SystemExit(0)
 
     # Optional lifecycle handshake for Unity-managed terminal launches
     if args.unity_instance_token:
