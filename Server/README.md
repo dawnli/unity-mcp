@@ -24,7 +24,7 @@ Install and run directly from PyPI using `uvx`.
 **Run Server (HTTP):**
 
 ```bash
-uvx --from mcpforunityserver mcp-for-unity --transport http --http-url http://localhost:8080
+uvx --from mcpforunityserver mcp-for-unity --transport http --http-url http://127.0.0.1:8080
 ```
 
 **MCP Client Configuration (HTTP):**
@@ -33,7 +33,7 @@ uvx --from mcpforunityserver mcp-for-unity --transport http --http-url http://lo
 {
   "mcpServers": {
     "UnityMCP": {
-      "url": "http://localhost:8080/mcp"
+      "url": "http://127.0.0.1:8080/mcp"
     }
   }
 }
@@ -94,7 +94,7 @@ docker build -t unity-mcp-server .
 docker run -p 8080:8080 unity-mcp-server --transport http --http-url http://0.0.0.0:8080
 ```
 
-Configure your MCP client with `"url": "http://localhost:8080/mcp"`.
+Configure your MCP client with `"url": "http://127.0.0.1:8080/mcp"`.
 
 ### Option 4: Local Development
 
@@ -120,7 +120,7 @@ The server connects to Unity Editor automatically when both are running. Most us
 These options apply to the `mcp-for-unity` command (whether run via `uvx`, Docker, or `python src/main.py`).
 
 - `--transport {stdio,http}` - Transport protocol (default: `stdio`)
-- `--http-url URL` - Base URL used to derive host/port defaults (default: `http://localhost:8080`)
+- `--http-url URL` - Base URL used to derive host/port defaults (default: `http://127.0.0.1:8080`)
 - `--http-host HOST` - Override HTTP bind host (overrides URL host)
 - `--http-port PORT` - Override HTTP bind port (overrides URL port)
 - `--http-remote-hosted` - Treat HTTP transport as remotely hosted
@@ -133,7 +133,7 @@ These options apply to the `mcp-for-unity` command (whether run via `uvx`, Docke
 - `--api-key-cache-ttl SECONDS` - Cache duration for validated keys (default: `300`)
 - `--api-key-service-token-header HEADER` - Header name for server-to-auth-service authentication (e.g. `X-Service-Token`)
 - `--api-key-service-token TOKEN` - Token value sent to the auth service for server authentication
-- `--default-instance INSTANCE` - Default Unity instance to target (project name, hash, or `Name@hash`)
+- `--default-instance INSTANCE` - Default Unity instance to target (computed project hash)
 - `--project-scoped-tools` - Keep custom tools scoped to the active Unity project and enable the custom tools resource
 - `--unity-instance-token TOKEN` - Optional per-launch token set by Unity for deterministic lifecycle management
 - `--pidfile PATH` - Optional path where the server writes its PID on startup (used by Unity-managed terminal launches)
@@ -141,11 +141,11 @@ These options apply to the `mcp-for-unity` command (whether run via `uvx`, Docke
 ### Environment variables
 
 - `UNITY_MCP_TRANSPORT` - Transport protocol: `stdio` or `http`
-- `UNITY_MCP_HTTP_URL` - HTTP server URL (default: `http://localhost:8080`)
+- `UNITY_MCP_HTTP_URL` - HTTP server URL (default: `http://127.0.0.1:8080`)
 - `UNITY_MCP_HTTP_HOST` - HTTP bind host (overrides URL host)
 - `UNITY_MCP_HTTP_PORT` - HTTP bind port (overrides URL port)
 - `UNITY_MCP_HTTP_REMOTE_HOSTED` - Enable remote-hosted mode (`true`, `1`, or `yes`)
-- `UNITY_MCP_DEFAULT_INSTANCE` - Default Unity instance to target (project name, hash, or `Name@hash`)
+- `UNITY_MCP_DEFAULT_INSTANCE` - Default Unity instance to target (computed project hash)
 - `UNITY_MCP_SKIP_STARTUP_CONNECT=1` - Skip initial Unity connection attempt on startup
 - `UNITY_MCP_LOG_DIR` - Override the rotating server log directory. Default: `%LOCALAPPDATA%\UnityMCP\Logs` (Windows), `~/Library/Application Support/UnityMCP/Logs` (macOS), `$XDG_STATE_HOME/UnityMCP/Logs` (Linux/BSD, defaults to `~/.local/state/UnityMCP/Logs`).
 
@@ -212,7 +212,7 @@ When deploying the server as a shared remote service (e.g. for a team or Asset S
 
 - All MCP tool/resource calls and Unity plugin WebSocket connections require a valid `X-API-Key` header.
 - Each user only sees Unity instances that connected with their API key (session isolation).
-- Auto-selection of a sole Unity instance is disabled; users must explicitly call `set_active_instance`.
+- Auto-selection of a sole Unity instance is disabled; clients must explicitly pass `unity_instance="<hash>"` on tool calls or `?unity_instance=<hash>` on resource URIs. `set_active_instance(instance="<hash>")` is a compatibility fallback.
 - CLI REST routes (`/api/command`, `/api/instances`, `/api/custom-tools`) are disabled.
 - `/health` and `/api/auth/login-url` remain accessible without authentication.
 

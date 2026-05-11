@@ -377,7 +377,7 @@ class CustomToolService:
             if not unity_instance:
                 return MCPResponse(
                     success=False,
-                    message="No active Unity instance. Call set_active_instance with Name@hash from mcpforunity://instances.",
+                    message='No active Unity instance. Compute the project hash from the absolute Unity project path and pass unity_instance="<hash>" on this tool call.',
                 )
 
             project_id = resolve_project_id_for_unity_instance(unity_instance)
@@ -474,8 +474,8 @@ def compute_project_id(project_name: str, project_path: str) -> str:
     """
     DEPRECATED: Computes a SHA256-based project ID.
     This function is no longer used as of the multi-session fix.
-    Unity instances now use their native project_hash (SHA1-based) for consistency
-    across stdio and WebSocket transports.
+    Unity instances now use the normalized absolute project path hash for
+    consistency across stdio and WebSocket transports.
     """
     combined = f"{project_name}:{project_path}"
     return sha256(combined.encode("utf-8")).hexdigest().upper()[:16]
@@ -509,8 +509,8 @@ def resolve_project_id_for_unity_instance(unity_instance: str | None) -> str | N
             )
 
         if target:
-            # Return the project_hash from Unity (not a computed SHA256 hash).
-            # This matches the hash Unity uses when registering tools via WebSocket.
+            # Return the project_hash from Unity. This matches the hash Unity uses
+            # when registering tools via WebSocket.
             if target.hash:
                 return target.hash
             logger.warning(

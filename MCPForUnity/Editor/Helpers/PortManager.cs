@@ -2,8 +2,6 @@ using System;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
-using System.Security.Cryptography;
-using System.Text;
 using System.Threading;
 using MCPForUnity.Editor.Constants;
 using Newtonsoft.Json;
@@ -300,29 +298,9 @@ namespace MCPForUnity.Editor.Helpers
         private static string GetRegistryFilePath()
         {
             string dir = GetRegistryDirectory();
-            string hash = ComputeProjectHash(Application.dataPath);
+            string hash = ProjectIdentityUtility.ComputeProjectPathHash(Application.dataPath);
             string fileName = $"unity-mcp-port-{hash}.json";
             return Path.Combine(dir, fileName);
-        }
-
-        private static string ComputeProjectHash(string input)
-        {
-            try
-            {
-                using SHA1 sha1 = SHA1.Create();
-                byte[] bytes = Encoding.UTF8.GetBytes(input ?? string.Empty);
-                byte[] hashBytes = sha1.ComputeHash(bytes);
-                var sb = new StringBuilder();
-                foreach (byte b in hashBytes)
-                {
-                    sb.Append(b.ToString("x2"));
-                }
-                return sb.ToString()[..8]; // short, sufficient for filenames
-            }
-            catch
-            {
-                return "default";
-            }
         }
     }
 }

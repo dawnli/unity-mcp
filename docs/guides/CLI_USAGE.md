@@ -48,7 +48,7 @@ unity-mcp gameobject find "Player"
 unity-mcp instance list
 
 # Set active instance
-unity-mcp instance set "ProjectName@abc123"
+unity-mcp instance set "<hash>"
 
 # Show current instance
 unity-mcp instance current
@@ -536,7 +536,7 @@ Set defaults via environment:
 export UNITY_MCP_HOST=192.168.1.100
 export UNITY_MCP_HTTP_PORT=8080
 export UNITY_MCP_FORMAT=json
-export UNITY_MCP_INSTANCE=MyProject@abc123
+export UNITY_MCP_INSTANCE=<hash>
 ```
 
 ## Troubleshooting

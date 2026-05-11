@@ -56,7 +56,7 @@ namespace MCPForUnity.Editor.Helpers
                     return;
                 }
 
-                _cachedProjectHash = ComputeProjectHash(dataPath);
+                _cachedProjectHash = ComputeProjectPathHash(dataPath);
                 _cachedProjectName = ComputeProjectName(dataPath);
             }
             catch
@@ -66,8 +66,8 @@ namespace MCPForUnity.Editor.Helpers
         }
 
         /// <summary>
-        /// Returns the SHA1 hash of the current project path (truncated to 16 characters).
-        /// Matches the legacy hash used by the stdio bridge and server registry.
+        /// Returns the SHA256 hash of the normalized absolute project root path,
+        /// truncated to 24 characters.
         /// </summary>
         public static string GetProjectHash()
         {
@@ -85,24 +85,56 @@ namespace MCPForUnity.Editor.Helpers
             return _cachedProjectName;
         }
 
-        private static string ComputeProjectHash(string dataPath)
+        public static string ComputeProjectPathHash(string path)
         {
             try
             {
-                using SHA1 sha1 = SHA1.Create();
-                byte[] bytes = Encoding.UTF8.GetBytes(dataPath);
-                byte[] hashBytes = sha1.ComputeHash(bytes);
-                var sb = new StringBuilder();
-                foreach (byte b in hashBytes)
+                string normalized = NormalizeProjectRootPath(path);
+                if (string.IsNullOrEmpty(normalized))
                 {
-                    sb.Append(b.ToString("x2"));
+                    return "default";
                 }
-                return sb.ToString(0, Math.Min(16, sb.Length)).ToLowerInvariant();
+
+                using SHA256 sha256 = SHA256.Create();
+                byte[] bytes = Encoding.UTF8.GetBytes(normalized);
+                byte[] hashBytes = sha256.ComputeHash(bytes);
+                var sb = new StringBuilder();
+                for (int i = 0; i < hashBytes.Length && sb.Length < 24; i++)
+                {
+                    sb.Append(hashBytes[i].ToString("x2"));
+                }
+                return sb.ToString(0, Math.Min(24, sb.Length)).ToLowerInvariant();
             }
             catch
             {
                 return "default";
             }
+        }
+
+        public static string NormalizeProjectRootPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return string.Empty;
+            }
+
+            string normalized = path.Trim();
+            try
+            {
+                normalized = Path.GetFullPath(normalized);
+            }
+            catch
+            {
+                // Keep the trimmed value; callers still get deterministic output.
+            }
+
+            normalized = normalized.Replace('\\', '/').TrimEnd('/');
+            if (normalized.EndsWith("/Assets", StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = normalized.Substring(0, normalized.Length - "/Assets".Length).TrimEnd('/');
+            }
+
+            return normalized.ToLowerInvariant();
         }
 
         private static string ComputeProjectName(string dataPath)
@@ -247,9 +279,8 @@ namespace MCPForUnity.Editor.Helpers
                     return "default";
                 }
 
-                // Normalise trailing separators so hashes remain stable
                 workingDirectory = workingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                return ComputeProjectHash(Path.Combine(workingDirectory, "Assets"));
+                return ComputeProjectPathHash(workingDirectory);
             }
             catch
             {

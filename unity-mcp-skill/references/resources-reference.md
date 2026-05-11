@@ -17,10 +17,10 @@ Resources provide read-only access to Unity state. Use resources to inspect befo
 
 ## URI Scheme
 
-All resources use `mcpforunity://` scheme:
+All normal resource reads must include `unity_instance=PROJECT_HASH` in the URI query:
 
 ```
-mcpforunity://{category}/{resource_path}[?query_params]
+mcpforunity://{category}/{resource_path}?unity_instance=PROJECT_HASH[&query_params]
 ```
 
 **Categories:** `editor`, `scene`, `prefab`, `project`, `pipeline`, `rendering`, `menu-items`, `custom-tools`, `tests`, `instances`
@@ -29,7 +29,7 @@ mcpforunity://{category}/{resource_path}[?query_params]
 
 ## Editor State Resources
 
-### mcpforunity://editor/state
+### mcpforunity://editor/state?unity_instance=PROJECT_HASH
 
 **Purpose:** Editor readiness snapshot - check before tool operations.
 
@@ -63,7 +63,7 @@ mcpforunity://{category}/{resource_path}[?query_params]
 - `blocking_reasons`: Array explaining why tools might fail
 - `recommended_retry_after_ms`: Suggested wait time
 
-### mcpforunity://editor/selection
+### mcpforunity://editor/selection?unity_instance=PROJECT_HASH
 
 **Purpose:** Currently selected objects.
 
@@ -79,7 +79,7 @@ mcpforunity://{category}/{resource_path}[?query_params]
 }
 ```
 
-### mcpforunity://editor/active-tool
+### mcpforunity://editor/active-tool?unity_instance=PROJECT_HASH
 
 **Purpose:** Current editor tool state.
 
@@ -93,7 +93,7 @@ mcpforunity://{category}/{resource_path}[?query_params]
 }
 ```
 
-### mcpforunity://editor/windows
+### mcpforunity://editor/windows?unity_instance=PROJECT_HASH
 
 **Purpose:** All open editor windows.
 
@@ -111,7 +111,7 @@ mcpforunity://{category}/{resource_path}[?query_params]
 }
 ```
 
-### mcpforunity://editor/prefab-stage
+### mcpforunity://editor/prefab-stage?unity_instance=PROJECT_HASH
 
 **Purpose:** Current prefab editing context.
 
@@ -129,7 +129,7 @@ mcpforunity://{category}/{resource_path}[?query_params]
 
 ## Camera Resources
 
-### mcpforunity://scene/cameras
+### mcpforunity://scene/cameras?unity_instance=PROJECT_HASH
 
 **Purpose:** List all cameras in the scene (Unity Camera + CinemachineCamera) with full status. Read this before using `manage_camera` to understand the current camera setup.
 
@@ -183,7 +183,7 @@ mcpforunity://{category}/{resource_path}[?query_params]
 
 ## Graphics Resources
 
-### mcpforunity://scene/volumes
+### mcpforunity://scene/volumes?unity_instance=PROJECT_HASH
 
 **Purpose:** List all Volume components in the scene with effects and parameters. Read this before using `manage_graphics` volume actions.
 
@@ -225,7 +225,7 @@ mcpforunity://{category}/{resource_path}[?query_params]
 
 **Use with:** `manage_graphics` volume actions (volume_create, volume_add_effect, volume_set_effect, etc.)
 
-### mcpforunity://rendering/stats
+### mcpforunity://rendering/stats?unity_instance=PROJECT_HASH
 
 **Purpose:** Current rendering performance counters (draw calls, batches, triangles, memory).
 
@@ -248,7 +248,7 @@ mcpforunity://{category}/{resource_path}[?query_params]
 
 **Use with:** `manage_graphics` stats actions (stats_get, stats_list_counters, stats_get_memory)
 
-### mcpforunity://pipeline/renderer-features
+### mcpforunity://pipeline/renderer-features?unity_instance=PROJECT_HASH
 
 **Purpose:** URP renderer features on the active renderer (SSAO, Decals, etc.).
 
@@ -279,11 +279,11 @@ mcpforunity://{category}/{resource_path}[?query_params]
 
 ## Scene & GameObject Resources
 
-### mcpforunity://scene/gameobject-api
+### mcpforunity://scene/gameobject-api?unity_instance=PROJECT_HASH
 
 **Purpose:** Documentation for GameObject resources (read this first).
 
-### mcpforunity://scene/gameobject/{instance_id}
+### mcpforunity://scene/gameobject/{instance_id}?unity_instance=PROJECT_HASH
 
 **Purpose:** Basic GameObject data (metadata, no component properties).
 
@@ -313,7 +313,7 @@ mcpforunity://{category}/{resource_path}[?query_params]
 }
 ```
 
-### mcpforunity://scene/gameobject/{instance_id}/components
+### mcpforunity://scene/gameobject/{instance_id}/components?unity_instance=PROJECT_HASH
 
 **Purpose:** All components with full property serialization (paginated).
 
@@ -351,7 +351,7 @@ mcpforunity://{category}/{resource_path}[?query_params]
 }
 ```
 
-### mcpforunity://scene/gameobject/{instance_id}/component/{component_name}
+### mcpforunity://scene/gameobject/{instance_id}/component/{component_name}?unity_instance=PROJECT_HASH
 
 **Purpose:** Single component with full properties.
 
@@ -381,11 +381,11 @@ mcpforunity://{category}/{resource_path}[?query_params]
 
 ## Prefab Resources
 
-### mcpforunity://prefab-api
+### mcpforunity://prefab-api?unity_instance=PROJECT_HASH
 
 **Purpose:** Documentation for prefab resources.
 
-### mcpforunity://prefab/{encoded_path}
+### mcpforunity://prefab/{encoded_path}?unity_instance=PROJECT_HASH
 
 **Purpose:** Prefab asset information.
 
@@ -411,7 +411,7 @@ Assets/Prefabs/Player.prefab → Assets%2FPrefabs%2FPlayer.prefab
 }
 ```
 
-### mcpforunity://prefab/{encoded_path}/hierarchy
+### mcpforunity://prefab/{encoded_path}/hierarchy?unity_instance=PROJECT_HASH
 
 **Purpose:** Full prefab hierarchy with nested prefab info.
 
@@ -443,7 +443,7 @@ Assets/Prefabs/Player.prefab → Assets%2FPrefabs%2FPlayer.prefab
 
 ## Project Resources
 
-### mcpforunity://project/info
+### mcpforunity://project/info?unity_instance=PROJECT_HASH
 
 **Purpose:** Static project configuration.
 
@@ -458,7 +458,7 @@ Assets/Prefabs/Player.prefab → Assets%2FPrefabs%2FPlayer.prefab
 }
 ```
 
-### mcpforunity://project/tags
+### mcpforunity://project/tags?unity_instance=PROJECT_HASH
 
 **Purpose:** All tags defined in TagManager.
 
@@ -467,7 +467,7 @@ Assets/Prefabs/Player.prefab → Assets%2FPrefabs%2FPlayer.prefab
 ["Untagged", "Respawn", "Finish", "EditorOnly", "MainCamera", "Player", "GameController", "Enemy"]
 ```
 
-### mcpforunity://project/layers
+### mcpforunity://project/layers?unity_instance=PROJECT_HASH
 
 **Purpose:** All layers with indices (0-31).
 
@@ -484,7 +484,7 @@ Assets/Prefabs/Player.prefab → Assets%2FPrefabs%2FPlayer.prefab
 }
 ```
 
-### mcpforunity://menu-items
+### mcpforunity://menu-items?unity_instance=PROJECT_HASH
 
 **Purpose:** All available Unity menu items.
 
@@ -502,7 +502,7 @@ Assets/Prefabs/Player.prefab → Assets%2FPrefabs%2FPlayer.prefab
 ]
 ```
 
-### mcpforunity://custom-tools
+### mcpforunity://custom-tools?unity_instance=PROJECT_HASH
 
 **Purpose:** Custom tools available in the active Unity project.
 
@@ -531,7 +531,7 @@ Assets/Prefabs/Player.prefab → Assets%2FPrefabs%2FPlayer.prefab
 
 ### mcpforunity://instances
 
-**Purpose:** All running Unity Editor instances (for multi-instance workflows).
+**Purpose:** Diagnostic list of running Unity Editor instances. Do not use this as the normal targeting flow.
 
 **Returns:**
 ```json
@@ -540,16 +540,16 @@ Assets/Prefabs/Player.prefab → Assets%2FPrefabs%2FPlayer.prefab
   "instance_count": 2,
   "instances": [
     {
-      "id": "MyProject@abc123",
+      "id": "MyProject@d3b07384d113edec49eaa623",
       "name": "MyProject",
-      "hash": "abc123",
+      "hash": "d3b07384d113edec49eaa623",
       "unity_version": "2022.3.10f1",
       "connected_at": "2024-01-15T10:30:00Z"
     },
     {
-      "id": "TestProject@def456",
+      "id": "TestProject@4e07408562bedb8b60ce05c1",
       "name": "TestProject",
-      "hash": "def456",
+      "hash": "4e07408562bedb8b60ce05c1",
       "unity_version": "2022.3.10f1",
       "connected_at": "2024-01-15T11:00:00Z"
     }
@@ -558,13 +558,13 @@ Assets/Prefabs/Player.prefab → Assets%2FPrefabs%2FPlayer.prefab
 }
 ```
 
-**Use with:** `set_active_instance(instance="MyProject@abc123")`
+**Normal flow:** compute the project hash from the absolute project path with `scripts/project_path_hash.py`, then pass `unity_instance=PROJECT_HASH` on each tool call or append `?unity_instance=PROJECT_HASH` to resource URIs. Use this resource only when routing by computed hash fails and you need diagnostics.
 
 ---
 
 ## Test Resources
 
-### mcpforunity://tests
+### mcpforunity://tests?unity_instance=PROJECT_HASH
 
 **Purpose:** All tests in the project.
 
@@ -584,14 +584,14 @@ Assets/Prefabs/Player.prefab → Assets%2FPrefabs%2FPlayer.prefab
 ]
 ```
 
-### mcpforunity://tests/{mode}
+### mcpforunity://tests/{mode}?unity_instance=PROJECT_HASH
 
 **Purpose:** Tests filtered by mode.
 
 **Parameters:**
 - `mode` (string): "EditMode" or "PlayMode"
 
-**Example:** `mcpforunity://tests/EditMode`
+**Example:** `mcpforunity://tests/EditMode?unity_instance=PROJECT_HASH`
 
 ---
 
@@ -601,7 +601,7 @@ Assets/Prefabs/Player.prefab → Assets%2FPrefabs%2FPlayer.prefab
 
 ```python
 # Before any complex operation:
-# Read mcpforunity://editor/state
+# Read mcpforunity://editor/state?unity_instance=PROJECT_HASH
 # Check ready_for_tools == true
 ```
 
@@ -609,37 +609,37 @@ Assets/Prefabs/Player.prefab → Assets%2FPrefabs%2FPlayer.prefab
 
 ```python
 # 1. find_gameobjects to get IDs
-result = find_gameobjects(search_term="Player")
+result = find_gameobjects(search_term="Player", unity_instance=PROJECT_HASH)
 
 # 2. Read resource for full data
-# mcpforunity://scene/gameobject/{id}
+# mcpforunity://scene/gameobject/{id}?unity_instance=PROJECT_HASH
 ```
 
 ### 3. Paginate Large Queries
 
 ```python
 # Start with include_properties=false for component lists
-# mcpforunity://scene/gameobject/{id}/components?include_properties=false&page_size=25
+# mcpforunity://scene/gameobject/{id}/components?include_properties=false&page_size=25&unity_instance=PROJECT_HASH
 
 # Then read specific components as needed
-# mcpforunity://scene/gameobject/{id}/component/Rigidbody
+# mcpforunity://scene/gameobject/{id}/component/Rigidbody?unity_instance=PROJECT_HASH
 ```
 
 ### 4. URL-Encode Prefab Paths
 
 ```python
 # Wrong:
-# mcpforunity://prefab/Assets/Prefabs/Player.prefab
+# mcpforunity://prefab/Assets/Prefabs/Player.prefab?unity_instance=PROJECT_HASH
 
 # Correct:
-# mcpforunity://prefab/Assets%2FPrefabs%2FPlayer.prefab
+# mcpforunity://prefab/Assets%2FPrefabs%2FPlayer.prefab?unity_instance=PROJECT_HASH
 ```
 
 ### 5. Multi-Instance Awareness
 
 ```python
-# Always check mcpforunity://instances when:
-# - First connecting
-# - Commands fail unexpectedly
-# - Working with multiple projects
+# Normal flow:
+# 1. Compute the hash from the absolute Unity project path.
+# 2. Pass unity_instance=PROJECT_HASH on tool calls and ?unity_instance=PROJECT_HASH on resource reads.
+# 3. Read mcpforunity://instances only as a diagnostic fallback.
 ```

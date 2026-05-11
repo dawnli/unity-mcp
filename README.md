@@ -79,7 +79,7 @@ openupm add com.coplaydev.unity-mcp
 ### 2. Start the Server & Connect
 
 1. In Unity: `Window > MCP for Unity`
-2. Click **Start Server** (launches HTTP server on `localhost:8080`)
+2. Click **Start Server** (launches HTTP server on `127.0.0.1:8080`)
 3. Select your MCP Client from the dropdown and click **Configure**
 4. Look for 🟢 "Connected ✓"
 5. **Connect your client:** Some clients (Cursor, Antigravity, OpenClaw) require enabling an MCP toggle or plugin in settings. OpenClaw also needs the `openclaw-mcp-bridge` plugin enabled and follows the currently selected MCP for Unity transport (`HTTP` or `stdio`). Others (Claude Desktop, Claude Code) auto-connect after configuration.
@@ -116,7 +116,7 @@ If auto-setup doesn't work, add this to your MCP client's config file:
 {
   "mcpServers": {
     "unityMCP": {
-      "url": "http://localhost:8080/mcp"
+      "url": "http://127.0.0.1:8080/mcp"
     }
   }
 }
@@ -128,7 +128,7 @@ If auto-setup doesn't work, add this to your MCP client's config file:
   "servers": {
     "unityMCP": {
       "type": "http",
-      "url": "http://localhost:8080/mcp"
+      "url": "http://127.0.0.1:8080/mcp"
     }
   }
 }
@@ -166,11 +166,25 @@ If auto-setup doesn't work, add this to your MCP client's config file:
 <details>
 <summary><strong>Multiple Unity Instances</strong></summary>
 
-MCP for Unity supports multiple Unity Editor instances. To target a specific one:
+MCP for Unity supports multiple Unity Editor instances through one shared MCP server URL. The MCP client should keep using the fixed local URL `http://127.0.0.1:8080/mcp`; it does not need a project-specific URL.
 
-1. Ask your LLM to check the `unity_instances` resource
-2. Use `set_active_instance` with the `Name@hash` (e.g., `MyProject@abc123`)
-3. All subsequent tools route to that instance
+Each Unity project is identified by a deterministic project hash. The hash input is the Unity project root absolute path after this normalization:
+
+1. Convert `\` to `/`
+2. Convert letters to lowercase
+3. Strip a trailing `/`
+4. Strip a trailing `/Assets` segment if an Assets path was provided
+5. Hash the normalized project root path with SHA-256 and use the first 24 hex characters
+
+Normal AI targeting flow:
+
+1. Compute the project hash from the intended Unity project absolute path. The bundled `unity-mcp-skill/scripts/project_path_hash.py` script uses the same normalization and hash algorithm as the Unity plugin.
+2. Pass `unity_instance="<hash>"` on every Unity-managed tool call.
+3. For resource reads, append `?unity_instance=<hash>` to the resource URI.
+
+`set_active_instance(instance="<hash>")` remains available as a compatibility fallback for clients or resources that cannot carry per-call routing. Do not use the `unity_instances` resource for normal targeting; it is a diagnostic fallback if routing by computed hash fails.
+
+Manual validation cases are in [`docs/guides/MULTI_CLIENT_ROUTING_TESTS.md`](docs/guides/MULTI_CLIENT_ROUTING_TESTS.md).
 </details>
 
 <details>

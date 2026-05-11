@@ -43,7 +43,7 @@ In this new version of MCP for Unity, our MCP server supports both the stdio and
 
 ### HTTP Architecture
 
-We create MCP configs that reference a URL, by default http://localhost:8080, however, users can change it to any address. MCP clients connect to the running HTTP server, and communicate with the MCP server via HTTP POST requests with JSON. Unlike in stdio, the MCP server is not a subprocess of the client, but is run independently of all other components.
+We create MCP configs that reference a URL, by default http://127.0.0.1:8080, however, users can change it to any address. MCP clients connect to the running HTTP server, and communicate with the MCP server via HTTP POST requests with JSON. Unlike in stdio, the MCP server is not a subprocess of the client, but is run independently of all other components.
 
 What about the MCP server and Unity? We could maintain the communication channel that's used in stdio i.e. communicating via port 6400. However, this would limit the HTTP server to only being run locally. A remote HTTP server would not have access to a user's port 6400 (unless users open their ports to the internet, which may be hard for some and is an unnecessary security risk).
 
@@ -188,7 +188,7 @@ That requirement of keeping tools local to the projeect made this implementation
 
 To make tools local to the project, we add a `mcpforunity://custom-tools` resource which lists all tools mapped to a session (which is retrieve from FastMCP's context). And then we add a `execute_custom_tool` function tool which can call the tools the user added. This worked surprisingly well, but required some tweaks:
 
-- We removed the fallback for session IDs in the server. If there's more than one Unity instance connected to the server, the MCP client MUST call `set_active_instance` so the mapping between session IDs and Unity instances will be correct.
+- We removed the fallback for session IDs in the server. If there's more than one Unity instance connected to the server, the MCP client must explicitly route with `unity_instance` per call, or use `set_active_instance` as a compatibility fallback.
 - We removed the `read_resources` tool. It simply did not work, and LLMs would go in circles for a long time before actually reading the resource directly. This only works because MCP resources have up to date information and gives the MCP clients the right context to call the tools.
 
 > **Note**: FastMCP can register and deregister tools while the server is running, however, not all MCP clients can process the updates in real time. We recommend that users refresh/reconfigure the MCP servers in the clients so they can see the new custom tools.

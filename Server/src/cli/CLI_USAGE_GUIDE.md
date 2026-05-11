@@ -70,7 +70,7 @@ Make sure the Unity MCP server is running with HTTP transport:
 ```bash
 # The server is typically started via the Unity-MCP window, select HTTP local, and start server, or try this manually:
 cd /path/to/unity-mcp/Server
-uv run mcp-for-unity --transport http --http-url http://localhost:8080
+uv run mcp-for-unity --transport http --http-url http://127.0.0.1:8080
 ```
 
 ### 2. Verify Connection
@@ -149,7 +149,7 @@ Global options come **BEFORE** the command group:
 | `--port` | `-p` | MCP server port | `8080` |
 | `--format` | `-f` | Output format: `text`, `json`, `table` | `text` |
 | `--timeout` | `-t` | Command timeout in seconds | `30` |
-| `--instance` | `-i` | Target Unity instance (hash or Name@hash) | auto |
+| `--instance` | `-i` | Target Unity instance by computed project hash | auto |
 | `--verbose` | `-v` | Enable verbose output | `false` |
 
 **✅ Correct:**

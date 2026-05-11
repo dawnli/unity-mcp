@@ -20,7 +20,7 @@ logger = logging.getLogger("mcp-for-unity-server")
 __all__ = ['register_all_resources']
 
 
-def _serialize_pydantic(func):
+def _serialize_pydantic(func, *, accepts_unity_instance: bool = False):
     """Wrap a resource function so Pydantic models are serialized to JSON strings.
 
     FastMCP 3.x expects resource functions to return str, bytes, or ResourceResult.
@@ -29,6 +29,8 @@ def _serialize_pydantic(func):
     """
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
+        if accepts_unity_instance:
+            kwargs.pop("unity_instance", None)
         result = await func(*args, **kwargs)
         if isinstance(result, BaseModel):
             return result.model_dump_json()
@@ -36,7 +38,44 @@ def _serialize_pydantic(func):
             import json
             return json.dumps(result)
         return result
+    if accepts_unity_instance:
+        _with_optional_unity_instance_signature(wrapper)
     return wrapper
+
+
+def _with_unity_instance_query(uri: str) -> str | None:
+    """Return a URI template variant that accepts ?unity_instance=... ."""
+    if "unity_instance" in uri:
+        return None
+    if "{?" in uri:
+        prefix, rest = uri.split("{?", 1)
+        params, suffix = rest.split("}", 1)
+        return prefix + "{?" + params + ",unity_instance}" + suffix
+    return f"{uri}{{?unity_instance}}"
+
+
+def _with_optional_unity_instance_signature(func):
+    sig = inspect.signature(func)
+    if "unity_instance" in sig.parameters:
+        return func
+
+    params = list(sig.parameters.values())
+    unity_param = inspect.Parameter(
+        "unity_instance",
+        inspect.Parameter.KEYWORD_ONLY,
+        default=None,
+        annotation=str | None,
+    )
+    insert_at = next(
+        (i for i, param in enumerate(params) if param.kind == inspect.Parameter.VAR_KEYWORD),
+        len(params),
+    )
+    params.insert(insert_at, unity_param)
+    annotations = dict(getattr(func, "__annotations__", {}))
+    annotations["unity_instance"] = str | None
+    func.__annotations__ = annotations
+    func.__signature__ = sig.replace(parameters=params)
+    return func
 
 
 def register_all_resources(mcp: FastMCP, *, project_scoped_tools: bool = True):
@@ -103,6 +142,24 @@ def register_all_resources(mcp: FastMCP, *, project_scoped_tools: bool = True):
             resource_info['func'] = wrapped
             logger.debug(
                 f"Registered resource: {resource_name} - {description}")
+            registered_count += 1
+
+        unity_instance_uri = _with_unity_instance_query(uri)
+        if unity_instance_uri:
+            wrapped_query = _serialize_pydantic(
+                func,
+                accepts_unity_instance=True,
+            )
+            wrapped_query = log_execution(resource_name, "Resource")(wrapped_query)
+            wrapped_query = telemetry_resource(resource_name)(wrapped_query)
+            wrapped_query = mcp.resource(
+                uri=unity_instance_uri,
+                name=resource_name,
+                description=description,
+                **kwargs,
+            )(wrapped_query)
+            logger.debug(
+                f"Registered resource template: {resource_name} - {unity_instance_uri}")
             registered_count += 1
 
     logger.info(

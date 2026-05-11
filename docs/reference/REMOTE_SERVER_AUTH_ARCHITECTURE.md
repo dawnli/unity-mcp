@@ -130,7 +130,7 @@ Both delegate to `_inject_unity_instance(context)`, which:
 1. Calls `_resolve_user_id()` to extract the user identity from the HTTP request.
 2. If remote-hosted mode is active and no `user_id` is resolved, raises `RuntimeError` (surfaces as MCP error).
 3. Sets `ctx.set_state("user_id", user_id)`.
-4. Looks up or auto-selects the active Unity instance.
+4. Resolves the target Unity instance from per-call `unity_instance` routing, then compatibility active state, then local auto-select.
 5. Sets `ctx.set_state("unity_instance", active_instance)`.
 
 ### _resolve_user_id_from_request
@@ -170,11 +170,12 @@ A complete authenticated MCP tool call follows this path:
 
 5. **`user_id` stored in context** via `ctx.set_state("user_id", user_id)`.
 
-6. **Session key derived** by `get_session_key(ctx)`:
-   - Priority: `client_id` (if available) > `user:{user_id}` > `"global"`.
-   - The `user:{user_id}` fallback ensures session isolation when MCP transports don't provide stable client IDs.
+6. **Per-call Unity instance resolved**:
+   - Tool calls read `unity_instance` from call arguments.
+   - Resource reads read `unity_instance` from the URI query and strip it before resource matching.
+   - If no per-call value is present, compatibility active state is read by `get_session_key(ctx)`.
 
-7. **Active Unity instance looked up** from `_active_by_key` dict using the session key. If none is set, `_maybe_autoselect_instance` is called (but returns `None` in remote-hosted mode).
+7. **Session key for compatibility state** uses `ctx.session_id` first, then `client_id`, then `user:{user_id}`, then `"global"`.
 
 8. **Instance injected** via `ctx.set_state("unity_instance", active_instance)`.
 

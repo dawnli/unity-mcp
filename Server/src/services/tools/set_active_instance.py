@@ -14,25 +14,25 @@ from core.config import config
 @mcp_for_unity_tool(
     unity_target=None,
     group=None,
-    description="Set the active Unity instance for this client/session. Accepts Name@hash, hash prefix, or port number (stdio only).",
+    description="Set the active Unity instance for this client/session. Use the computed project hash; hash prefixes and stdio port numbers are also accepted.",
     annotations=ToolAnnotations(
         title="Set Active Instance",
     ),
 )
 async def set_active_instance(
         ctx: Context,
-        instance: Annotated[str, "Target instance (Name@hash, hash prefix, or port number in stdio mode)"]
+        instance: Annotated[str, "Target computed project hash, hash prefix, or port number in stdio mode"]
 ) -> dict[str, Any]:
     transport = (config.transport_mode or "stdio").lower()
 
-    # Port number shorthand (stdio only) — resolve to Name@hash via pool discovery
+    # Port number shorthand (stdio only) - resolve via pool discovery
     value = (instance or "").strip()
     if value.isdigit():
         if transport == "http":
             return {
                 "success": False,
                 "error": f"Port-based targeting ('{value}') is not supported in HTTP transport mode. "
-                         "Use Name@hash or a hash prefix. Read mcpforunity://instances for available instances."
+                         "Use the project hash computed from the absolute Unity project path, or a unique hash prefix."
             }
         port_int = int(value)
         pool = get_unity_connection_pool()
@@ -94,7 +94,7 @@ async def set_active_instance(
         return {
             "success": False,
             "error": "Instance identifier is required. "
-                     "Use mcpforunity://instances to copy a Name@hash or provide a hash prefix."
+                     "Compute the project hash from the absolute Unity project path and pass that hash."
         }
     resolved = None
     if "@" in value:
@@ -103,7 +103,7 @@ async def set_active_instance(
             return {
                 "success": False,
                 "error": f"Instance '{value}' not found. "
-                "Use mcpforunity://instances to copy an exact Name@hash."
+                "Confirm the computed project hash; use mcpforunity://instances only as a diagnostic fallback."
             }
     else:
         lookup = value.lower()
@@ -118,7 +118,7 @@ async def set_active_instance(
             return {
                 "success": False,
                 "error": f"Instance hash '{value}' does not match any running Unity editors. "
-                "Use mcpforunity://instances to confirm the available hashes."
+                "Confirm the absolute project path used for hash calculation; use mcpforunity://instances only for diagnostics."
             }
         if len(matches) > 1:
             matching_ids = ", ".join(
@@ -127,7 +127,7 @@ async def set_active_instance(
             return {
                 "success": False,
                 "error": f"Instance hash '{value}' is ambiguous ({matching_ids}). "
-                "Provide the full Name@hash from mcpforunity://instances."
+                "Provide the full computed project hash."
             }
         resolved = matches[0]
 

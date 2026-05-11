@@ -23,9 +23,11 @@ from core.config import config
 class DummyMiddlewareContext:
     """Minimal MiddlewareContext stand-in with a mutable arguments dict."""
 
-    def __init__(self, ctx, arguments: dict | None = None):
+    def __init__(self, ctx, arguments: dict | None = None, uri: str | None = None):
         self.fastmcp_context = ctx
         self.message = SimpleNamespace(arguments=arguments if arguments is not None else {})
+        if uri is not None:
+            self.message.uri = uri
 
 
 def _make_middleware(monkeypatch, *, transport="stdio", plugin_hub_configured=False, sessions=None, pool_instances=None):
@@ -151,6 +153,25 @@ async def test_inline_does_not_persist_to_session(monkeypatch):
     mw_ctx2 = DummyMiddlewareContext(ctx, arguments={})
     await mw._inject_unity_instance(mw_ctx2)
     assert await ctx.get_state("unity_instance") == "ProjA@aaa111"
+
+
+@pytest.mark.asyncio
+async def test_active_instance_is_scoped_by_mcp_session_id(monkeypatch):
+    """Two MCP client sessions with the same client_id keep independent defaults."""
+    mw = _make_middleware(monkeypatch)
+
+    ctx_a = DummyContext()
+    ctx_a.client_id = "same-aiide-client"
+    ctx_a.session_id = "mcp-session-a"
+    ctx_b = DummyContext()
+    ctx_b.client_id = "same-aiide-client"
+    ctx_b.session_id = "mcp-session-b"
+
+    await mw.set_active_instance(ctx_a, "ProjA@aaa111")
+    await mw.set_active_instance(ctx_b, "ProjB@bbb222")
+
+    assert await mw.get_active_instance(ctx_a) == "ProjA@aaa111"
+    assert await mw.get_active_instance(ctx_b) == "ProjB@bbb222"
 
 
 @pytest.mark.asyncio
@@ -337,22 +358,73 @@ async def test_empty_string_unity_instance_falls_through_to_session(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_resource_read_unaffected(monkeypatch):
-    """on_read_resource with no .arguments attribute routes via session state normally."""
+async def test_resource_uri_query_routes_inline_instance(monkeypatch):
+    """Resource reads can route via ?unity_instance=... without session state."""
+    instances = [
+        SimpleNamespace(id="ProjA@aaa111", hash="aaa111"),
+        SimpleNamespace(id="ProjB@bbb222", hash="bbb222"),
+    ]
+    mw = _make_middleware(monkeypatch, pool_instances=instances)
+    ctx = DummyContext()
+    ctx.client_id = "client-1"
+    await mw.set_active_instance(ctx, "ProjA@aaa111")
+
+    resource_ctx = DummyMiddlewareContext(
+        ctx,
+        uri="mcpforunity://editor/state?unity_instance=bbb222",
+    )
+
+    await mw._inject_unity_instance(resource_ctx)
+
+    assert await ctx.get_state("unity_instance") == "ProjB@bbb222"
+    assert await mw.get_active_instance(ctx) == "ProjA@aaa111"
+    assert resource_ctx.message.uri == "mcpforunity://editor/state"
+
+
+@pytest.mark.asyncio
+async def test_resource_without_query_uses_session_state(monkeypatch):
+    """Resource reads without unity_instance query keep compatibility state."""
     mw = _make_middleware(monkeypatch)
     ctx = DummyContext()
     ctx.client_id = "client-1"
     await mw.set_active_instance(ctx, "Proj@abc123")
 
-    # ReadResourceRequestParams has .uri not .arguments
-    resource_ctx = SimpleNamespace(
-        fastmcp_context=ctx,
-        message=SimpleNamespace(uri="mcpforunity://scene/active"),
-    )
+    resource_ctx = DummyMiddlewareContext(ctx, uri="mcpforunity://editor/state")
 
     await mw._inject_unity_instance(resource_ctx)
 
     assert await ctx.get_state("unity_instance") == "Proj@abc123"
+
+
+@pytest.mark.asyncio
+async def test_list_tools_exposes_optional_unity_instance(monkeypatch):
+    """Unity-managed tools advertise per-call routing in their input schema."""
+    mw = _make_middleware(monkeypatch)
+
+    def fake_registry():
+        return [
+            {"name": "manage_scene", "unity_target": "manage_scene"},
+            {"name": "set_active_instance", "unity_target": None},
+        ]
+
+    monkeypatch.setattr("transport.unity_instance_middleware.get_registered_tools", fake_registry)
+
+    ctx = DummyContext()
+    mw_ctx = DummyMiddlewareContext(ctx, arguments={})
+    tools = [
+        SimpleNamespace(name="manage_scene", parameters={"type": "object", "properties": {}}),
+        SimpleNamespace(name="set_active_instance", parameters={"type": "object", "properties": {}}),
+    ]
+
+    async def call_next(_context):
+        return tools
+
+    result = await mw.on_list_tools(mw_ctx, call_next)
+
+    manage_schema = result[0].parameters["properties"]
+    server_schema = result[1].parameters["properties"]
+    assert "unity_instance" in manage_schema
+    assert "unity_instance" not in server_schema
 
 
 # ---------------------------------------------------------------------------

@@ -23,7 +23,7 @@ async def unity_instances(ctx: Context) -> dict[str, Any]:
     - id: Unique identifier (ProjectName@hash)
     - name: Project name
     - path: Full project path (stdio only)
-    - hash: 8-character hash of project path
+    - hash: project path hash
     - port: TCP port number (stdio only)
     - status: Current status (running, reloading, etc.) (stdio only)
     - last_heartbeat: Last heartbeat timestamp (stdio only)
@@ -83,7 +83,7 @@ async def unity_instances(ctx: Context) -> dict[str, Any]:
             if duplicates:
                 result["warning"] = (
                     f"Multiple instances found with duplicate project names: {duplicates}. "
-                    f"Use full format (e.g., 'ProjectName@hash') to specify which instance."
+                    f"Use the computed project hash with set_active_instance(instance='<hash>')."
                 )
 
             return result
@@ -110,7 +110,7 @@ async def unity_instances(ctx: Context) -> dict[str, Any]:
             if duplicates:
                 result["warning"] = (
                     f"Multiple instances found with duplicate project names: {duplicates}. "
-                    f"Use full format (e.g., 'ProjectName@hash') to specify which instance."
+                    f"Use the computed project hash with set_active_instance(instance='<hash>')."
                 )
 
             return result

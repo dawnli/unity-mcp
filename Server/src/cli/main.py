@@ -91,7 +91,7 @@ click.Group.resolve_command = _resolve_command_with_suggestions  # type: ignore[
     "--instance", "-i",
     default=None,
     envvar="UNITY_MCP_INSTANCE",
-    help="Target Unity instance (hash or Name@hash)."
+    help="Target Unity instance by computed project hash."
 )
 @click.option(
     "--verbose", "-v",

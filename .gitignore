@@ -62,3 +62,8 @@ scripts/local-test/
 
 # Ignore the .claude directory, since it might contain local/project-level setting such as deny and allowlist.
 /.claude
+!/.claude/
+!/.claude/skills/
+!/.claude/skills/unity-mcp-skill/
+!/.claude/skills/unity-mcp-skill/scripts/
+!/.claude/skills/unity-mcp-skill/scripts/project_path_hash.py

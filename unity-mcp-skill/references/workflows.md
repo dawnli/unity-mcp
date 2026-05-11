@@ -27,23 +27,25 @@ Common workflows and patterns for effective Unity-MCP usage.
 
 ```python
 # 1. Check editor state
-# Read mcpforunity://editor/state
+# Read mcpforunity://editor/state?unity_instance=PROJECT_HASH
 
 # 2. Verify ready_for_tools == true
 # If false, wait for recommended_retry_after_ms
 
 # 3. Check active scene
-# Read mcpforunity://editor/state → active_scene
+# Read mcpforunity://editor/state?unity_instance=PROJECT_HASH → active_scene
 
-# 4. List available instances (multi-instance)
-# Read mcpforunity://instances
+# 4. Compute the intended Unity project hash before tools/resources
+# python scripts/project_path_hash.py /absolute/path/to/UnityProject
+# Tool calls include unity_instance=PROJECT_HASH
+# Resource reads append ?unity_instance=PROJECT_HASH
 ```
 
 ### Before Any Operation
 
 ```python
 # Quick readiness check pattern:
-editor_state = read_resource("mcpforunity://editor/state")
+editor_state = read_resource("mcpforunity://editor/state?unity_instance=PROJECT_HASH")
 
 if not editor_state["ready_for_tools"]:
     # Check blocking_reasons
@@ -61,11 +63,11 @@ if editor_state["is_compiling"]:
 
 ### Fresh Scene Before Building
 
-**Always start a generated scene build with `manage_scene(action="create")`** to get a clean empty scene. This avoids conflicts with existing default objects (Camera, Light) that would cause "already exists" errors when the execution plan tries to create its own.
+**Always start a generated scene build with `manage_scene(action="create", unity_instance=PROJECT_HASH)`** to get a clean empty scene. This avoids conflicts with existing default objects (Camera, Light) that would cause "already exists" errors when the execution plan tries to create its own.
 
 ```python
 # Step 0: Create fresh empty scene (replaces current scene entirely)
-manage_scene(action="create", name="MyGeneratedScene", path="Assets/Scenes/")
+manage_scene(action="create", name="MyGeneratedScene", path="Assets/Scenes/", unity_instance=PROJECT_HASH)
 
 # Now proceed with the phased execution plan...
 # Phase 1: Environment (camera, lights) — no conflicts
@@ -81,6 +83,7 @@ After creating scripts and attaching components, use `set_property` to wire cros
 ```python
 # Wire a list of target GameObjects into a script's serialized field
 manage_components(
+    unity_instance=PROJECT_HASH,
     action="set_property",
     target="BeeManager",
     component_type="BeeManagerScript",
@@ -95,7 +98,9 @@ When scripts use `OnTriggerEnter` / `OnTriggerStay` / `OnTriggerExit`, at least 
 
 ```python
 # Moving objects (bees, players) need Rigidbody for triggers to fire
-batch_execute(commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    commands=[
     {"tool": "manage_components", "params": {
         "action": "add", "target": "Bee_1", "component_type": "Rigidbody"
     }},
@@ -107,19 +112,20 @@ batch_execute(commands=[
 ])
 ```
 
-### Script Overwrites with `manage_script(action="update")`
+### Script Overwrites with `manage_script(action="update", unity_instance=PROJECT_HASH)`
 
 When a generated script needs to be rewritten (e.g., to add auto-wiring logic), use `update` instead of deleting and recreating:
 
 ```python
 manage_script(
+    unity_instance=PROJECT_HASH,
     action="update",
     path="Assets/Scripts/MyScript.cs",
     contents="using UnityEngine;\n\npublic class MyScript : MonoBehaviour { ... }"
 )
 # manage_script update auto-triggers import + compile — just wait and check console
-# Read mcpforunity://editor/state → wait until is_compiling == false
-read_console(types=["error"], count=10)
+# Read mcpforunity://editor/state?unity_instance=PROJECT_HASH → wait until is_compiling == false
+read_console(types=["error"], count=10, unity_instance=PROJECT_HASH)
 ```
 
 ---
@@ -130,10 +136,12 @@ read_console(types=["error"], count=10)
 
 ```python
 # 1. Create new scene
-manage_scene(action="create", name="GameLevel", path="Assets/Scenes/")
+manage_scene(action="create", name="GameLevel", path="Assets/Scenes/", unity_instance=PROJECT_HASH)
 
 # 2. Batch create environment objects
-batch_execute(commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    commands=[
     {"tool": "manage_gameobject", "params": {
         "action": "create", "name": "Ground", "primitive_type": "Plane",
         "position": [0, 0, 0], "scale": [10, 1, 10]
@@ -148,22 +156,24 @@ batch_execute(commands=[
 ])
 
 # 3. Add light component (delete cube mesh, add light)
-manage_components(action="remove", target="Light", component_type="MeshRenderer")
-manage_components(action="remove", target="Light", component_type="MeshFilter")
-manage_components(action="remove", target="Light", component_type="BoxCollider")
-manage_components(action="add", target="Light", component_type="Light")
+manage_components(action="remove", target="Light", component_type="MeshRenderer", unity_instance=PROJECT_HASH)
+manage_components(action="remove", target="Light", component_type="MeshFilter", unity_instance=PROJECT_HASH)
+manage_components(action="remove", target="Light", component_type="BoxCollider", unity_instance=PROJECT_HASH)
+manage_components(action="add", target="Light", component_type="Light", unity_instance=PROJECT_HASH)
 manage_components(action="set_property", target="Light", component_type="Light",
+    unity_instance=PROJECT_HASH,
     property="type", value="Directional")
 
 # 4. Set up camera
 manage_gameobject(action="modify", target="Main Camera", position=[0, 5, -10],
+    unity_instance=PROJECT_HASH,
     rotation=[30, 0, 0])
 
 # 5. Verify with screenshot
-manage_camera(action="screenshot")
+manage_camera(action="screenshot", unity_instance=PROJECT_HASH)
 
 # 6. Save scene
-manage_scene(action="save")
+manage_scene(action="save", unity_instance=PROJECT_HASH)
 ```
 
 ### Populate Scene with Grid of Objects
@@ -184,19 +194,20 @@ for x in range(5):
         })
 
 # Execute in batches of 25
-batch_execute(commands=commands[:25], parallel=True)
+batch_execute(commands=commands[:25], parallel=True, unity_instance=PROJECT_HASH)
 ```
 
 ### Clone and Arrange Objects
 
 ```python
 # Find template object
-result = find_gameobjects(search_term="Template", search_method="by_name")
+result = find_gameobjects(search_term="Template", search_method="by_name", unity_instance=PROJECT_HASH)
 template_id = result["ids"][0]
 
 # Duplicate in a line
 for i in range(10):
     manage_gameobject(
+        unity_instance=PROJECT_HASH,
         action="duplicate",
         target=template_id,
         new_name=f"Instance_{i}",
@@ -213,6 +224,7 @@ for i in range(10):
 ```python
 # 1. Create script (automatically triggers import + compilation)
 create_script(
+    unity_instance=PROJECT_HASH,
     path="Assets/Scripts/EnemyAI.cs",
     contents='''using UnityEngine;
 
@@ -233,19 +245,20 @@ public class EnemyAI : MonoBehaviour
 )
 
 # 2. Wait for compilation to finish
-# Read mcpforunity://editor/state → wait until is_compiling == false
+# Read mcpforunity://editor/state?unity_instance=PROJECT_HASH → wait until is_compiling == false
 
 # 3. Check for errors
-console = read_console(types=["error"], count=10)
+console = read_console(types=["error"], count=10, unity_instance=PROJECT_HASH)
 if console["messages"]:
     # Handle compilation errors
     print("Compilation errors:", console["messages"])
 else:
     # 4. Attach to GameObject
-    manage_gameobject(action="modify", target="Enemy", components_to_add=["EnemyAI"])
+    manage_gameobject(action="modify", target="Enemy", components_to_add=["EnemyAI"], unity_instance=PROJECT_HASH)
 
     # 5. Set component properties
     manage_components(
+        unity_instance=PROJECT_HASH,
         action="set_property",
         target="Enemy",
         component_type="EnemyAI",
@@ -259,16 +272,18 @@ else:
 
 ```python
 # 1. Get current SHA
-sha_info = get_sha(uri="mcpforunity://path/Assets/Scripts/PlayerController.cs")
+sha_info = get_sha(uri="mcpforunity://path/Assets/Scripts/PlayerController.cs", unity_instance=PROJECT_HASH)
 
 # 2. Find the method to edit
 matches = find_in_file(
+    unity_instance=PROJECT_HASH,
     uri="mcpforunity://path/Assets/Scripts/PlayerController.cs",
     pattern="void Update\\(\\)"
 )
 
 # 3. Apply structured edit
 script_apply_edits(
+    unity_instance=PROJECT_HASH,
     name="PlayerController",
     path="Assets/Scripts",
     edits=[{
@@ -285,21 +300,23 @@ script_apply_edits(
 
 # 4. Validate
 validate_script(
+    unity_instance=PROJECT_HASH,
     uri="mcpforunity://path/Assets/Scripts/PlayerController.cs",
     level="standard"
 )
 
 # 5. Wait for compilation (script_apply_edits auto-triggers import + compile)
-# Read mcpforunity://editor/state → wait until is_compiling == false
+# Read mcpforunity://editor/state?unity_instance=PROJECT_HASH → wait until is_compiling == false
 
 # 6. Check console
-read_console(types=["error"], count=10)
+read_console(types=["error"], count=10, unity_instance=PROJECT_HASH)
 ```
 
 ### Add Method to Existing Class
 
 ```python
 script_apply_edits(
+    unity_instance=PROJECT_HASH,
     name="GameManager",
     path="Assets/Scripts",
     edits=[
@@ -331,6 +348,7 @@ script_apply_edits(
 ```python
 # 1. Create material
 manage_material(
+    unity_instance=PROJECT_HASH,
     action="create",
     material_path="Assets/Materials/PlayerMaterial.mat",
     shader="Standard",
@@ -343,6 +361,7 @@ manage_material(
 
 # 2. Assign to renderer
 manage_material(
+    unity_instance=PROJECT_HASH,
     action="assign_material_to_renderer",
     target="Player",
     material_path="Assets/Materials/PlayerMaterial.mat",
@@ -350,7 +369,7 @@ manage_material(
 )
 
 # 3. Verify visually
-manage_camera(action="screenshot")
+manage_camera(action="screenshot", unity_instance=PROJECT_HASH)
 ```
 
 ### Create Procedural Texture
@@ -358,6 +377,7 @@ manage_camera(action="screenshot")
 ```python
 # 1. Create base texture
 manage_texture(
+    unity_instance=PROJECT_HASH,
     action="create",
     path="Assets/Textures/Checkerboard.png",
     width=256,
@@ -367,6 +387,7 @@ manage_texture(
 
 # 2. Apply checkerboard pattern
 manage_texture(
+    unity_instance=PROJECT_HASH,
     action="apply_pattern",
     path="Assets/Textures/Checkerboard.png",
     pattern="checkerboard",
@@ -376,6 +397,7 @@ manage_texture(
 
 # 3. Create material with texture
 manage_material(
+    unity_instance=PROJECT_HASH,
     action="create",
     material_path="Assets/Materials/CheckerMaterial.mat",
     shader="Standard"
@@ -388,7 +410,9 @@ manage_material(
 
 ```python
 # 1. Create folder structure
-batch_execute(commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    commands=[
     {"tool": "manage_asset", "params": {"action": "create_folder", "path": "Assets/Prefabs"}},
     {"tool": "manage_asset", "params": {"action": "create_folder", "path": "Assets/Materials"}},
     {"tool": "manage_asset", "params": {"action": "create_folder", "path": "Assets/Scripts"}},
@@ -396,8 +420,8 @@ batch_execute(commands=[
 ])
 
 # 2. Move existing assets
-manage_asset(action="move", path="Assets/MyMaterial.mat", destination="Assets/Materials/MyMaterial.mat")
-manage_asset(action="move", path="Assets/MyScript.cs", destination="Assets/Scripts/MyScript.cs")
+manage_asset(action="move", path="Assets/MyMaterial.mat", destination="Assets/Materials/MyMaterial.mat", unity_instance=PROJECT_HASH)
+manage_asset(action="move", path="Assets/MyScript.cs", destination="Assets/Scripts/MyScript.cs", unity_instance=PROJECT_HASH)
 ```
 
 ### Search and Process Assets
@@ -405,6 +429,7 @@ manage_asset(action="move", path="Assets/MyScript.cs", destination="Assets/Scrip
 ```python
 # Find all prefabs
 result = manage_asset(
+    unity_instance=PROJECT_HASH,
     action="search",
     path="Assets",
     search_pattern="*.prefab",
@@ -416,7 +441,7 @@ result = manage_asset(
 for asset in result["assets"]:
     prefab_path = asset["path"]
     # Get prefab info
-    info = manage_prefabs(action="get_info", prefab_path=prefab_path)
+    info = manage_prefabs(action="get_info", prefab_path=prefab_path, unity_instance=PROJECT_HASH)
     print(f"Prefab: {prefab_path}, Children: {info['childCount']}")
 ```
 
@@ -427,6 +452,7 @@ Use `manage_gameobject` (not `manage_prefabs`) to place prefab instances in the 
 ```python
 # Full path
 manage_gameobject(
+    unity_instance=PROJECT_HASH,
     action="create",
     name="Enemy_1",
     prefab_path="Assets/Prefabs/Enemy.prefab",
@@ -435,10 +461,12 @@ manage_gameobject(
 )
 
 # Smart lookup — just the prefab name works too
-manage_gameobject(action="create", name="Enemy_2", prefab_path="Enemy", position=[10, 0, 3])
+manage_gameobject(action="create", name="Enemy_2", prefab_path="Enemy", position=[10, 0, 3], unity_instance=PROJECT_HASH)
 
 # Batch-spawn multiple instances
-batch_execute(commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    commands=[
     {"tool": "manage_gameobject", "params": {
         "action": "create", "name": f"Enemy_{i}",
         "prefab_path": "Enemy", "position": [i * 3, 0, 0], "parent": "Enemies"
@@ -447,7 +475,7 @@ batch_execute(commands=[
 ])
 ```
 
-> **Note:** `manage_prefabs` is for headless prefab editing (inspect, modify contents, create from GameObject). To *instantiate* a prefab into the scene, always use `manage_gameobject(action="create", prefab_path="...")`.
+> **Note:** `manage_prefabs` is for headless prefab editing (inspect, modify contents, create from GameObject). To *instantiate* a prefab into the scene, always use `manage_gameobject(action="create", prefab_path="...", unity_instance=PROJECT_HASH)`.
 
 ---
 
@@ -457,10 +485,11 @@ batch_execute(commands=[
 
 ```python
 # 1. List available tests
-# Read mcpforunity://tests/EditMode
+# Read mcpforunity://tests/EditMode?unity_instance=PROJECT_HASH
 
 # 2. Run specific tests
 result = run_tests(
+    unity_instance=PROJECT_HASH,
     mode="EditMode",
     test_names=["MyTests.TestPlayerMovement", "MyTests.TestEnemySpawn"],
     include_failed_tests=True
@@ -469,6 +498,7 @@ job_id = result["job_id"]
 
 # 3. Wait for results
 final_result = get_test_job(
+    unity_instance=PROJECT_HASH,
     job_id=job_id,
     wait_timeout=60,
     include_failed_tests=True
@@ -485,6 +515,7 @@ if final_result["status"] == "complete":
 ```python
 # Run all unit tests
 result = run_tests(
+    unity_instance=PROJECT_HASH,
     mode="EditMode",
     category_names=["Unit"],
     include_failed_tests=True
@@ -492,7 +523,7 @@ result = run_tests(
 
 # Poll until complete
 while True:
-    status = get_test_job(job_id=result["job_id"], wait_timeout=30)
+    status = get_test_job(job_id=result["job_id"], wait_timeout=30, unity_instance=PROJECT_HASH)
     if status["status"] in ["complete", "failed"]:
         break
 ```
@@ -502,6 +533,7 @@ while True:
 ```python
 # 1. Write test first
 create_script(
+    unity_instance=PROJECT_HASH,
     path="Assets/Tests/Editor/PlayerTests.cs",
     contents='''using NUnit.Framework;
 using UnityEngine;
@@ -519,11 +551,11 @@ public class PlayerTests
 )
 
 # 2. Wait for compilation (create_script auto-triggers import + compile)
-# Read mcpforunity://editor/state → wait until is_compiling == false
+# Read mcpforunity://editor/state?unity_instance=PROJECT_HASH → wait until is_compiling == false
 
 # 3. Run test (expect pass for this simple test)
-result = run_tests(mode="EditMode", test_names=["PlayerTests.TestPlayerStartsAtOrigin"])
-get_test_job(job_id=result["job_id"], wait_timeout=30)
+result = run_tests(mode="EditMode", test_names=["PlayerTests.TestPlayerStartsAtOrigin"], unity_instance=PROJECT_HASH)
+get_test_job(job_id=result["job_id"], wait_timeout=30, unity_instance=PROJECT_HASH)
 ```
 
 ---
@@ -535,6 +567,7 @@ get_test_job(job_id=result["job_id"], wait_timeout=30)
 ```python
 # 1. Check console for errors
 errors = read_console(
+    unity_instance=PROJECT_HASH,
     types=["error"],
     count=20,
     include_stacktrace=True,
@@ -548,27 +581,28 @@ for error in errors["messages"]:
     pass
 
 # 3. After fixing, refresh and check again
-refresh_unity(mode="force", scope="scripts", compile="request", wait_for_ready=True)
-read_console(types=["error"], count=10)
+refresh_unity(mode="force", scope="scripts", compile="request", wait_for_ready=True, unity_instance=PROJECT_HASH)
+read_console(types=["error"], count=10, unity_instance=PROJECT_HASH)
 ```
 
 ### Investigate Missing References
 
 ```python
 # 1. Find the GameObject
-result = find_gameobjects(search_term="Player", search_method="by_name")
+result = find_gameobjects(search_term="Player", search_method="by_name", unity_instance=PROJECT_HASH)
 
 # 2. Get all components
-# Read mcpforunity://scene/gameobject/{id}/components
+# Read mcpforunity://scene/gameobject/{id}/components?unity_instance=PROJECT_HASH
 
 # 3. Check for null references in serialized fields
 # Look for fields with null/missing values
 
 # 4. Find the referenced object
-result = find_gameobjects(search_term="Target", search_method="by_name")
+result = find_gameobjects(search_term="Target", search_method="by_name", unity_instance=PROJECT_HASH)
 
 # 5. Set the reference
 manage_components(
+    unity_instance=PROJECT_HASH,
     action="set_property",
     target="Player",
     component_type="PlayerController",
@@ -581,7 +615,7 @@ manage_components(
 
 ```python
 # 1. Get hierarchy
-hierarchy = manage_scene(action="get_hierarchy", page_size=100, include_transform=True)
+hierarchy = manage_scene(action="get_hierarchy", page_size=100, include_transform=True, unity_instance=PROJECT_HASH)
 
 # 2. Find objects at unexpected positions
 for item in hierarchy["data"]["items"]:
@@ -589,7 +623,7 @@ for item in hierarchy["data"]["items"]:
         print(f"Object {item['name']} fell through floor!")
 
 # 3. Visual verification
-manage_camera(action="screenshot")
+manage_camera(action="screenshot", unity_instance=PROJECT_HASH)
 ```
 
 ---
@@ -600,7 +634,7 @@ Unity has two UI systems: **UI Toolkit** (modern, recommended) and **uGUI** (Can
 
 > **Template warning:** This section is a skill template library, not a guaranteed source of truth. Examples may be inaccurate for your Unity version, package setup, or project conventions.
 > **Use safely:**
-> 1. **Always read `mcpforunity://project/info` first** to detect installed packages and input system.
+> 1. **Always read `mcpforunity://project/info?unity_instance=PROJECT_HASH` first** to detect installed packages and input system.
 > 2. Validate component/property names against the current project.
 > 3. Prefer targeting by instance ID or full path over generic names.
 > 4. Treat numeric enum values as placeholders and verify before reuse.
@@ -610,7 +644,7 @@ Unity has two UI systems: **UI Toolkit** (modern, recommended) and **uGUI** (Can
 **Before creating any UI**, read project info to determine which packages and input system are available.
 
 ```python
-# Read mcpforunity://project/info — returns:
+# Read mcpforunity://project/info?unity_instance=PROJECT_HASH — returns:
 # {
 #   "renderPipeline": "BuiltIn" | "Universal" | "HighDefinition" | "Custom",
 #   "activeInputHandler": "Old" | "New" | "Both",
@@ -647,6 +681,7 @@ UI Toolkit uses a web-like approach: **UXML** (like HTML) for structure, **USS**
 ```python
 # 1. Create UXML document (structure)
 manage_ui(
+    unity_instance=PROJECT_HASH,
     action="create",
     path="Assets/UI/MainMenu.uxml",
     contents='''<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
@@ -662,6 +697,7 @@ manage_ui(
 
 # 2. Create USS stylesheet (styling)
 manage_ui(
+    unity_instance=PROJECT_HASH,
     action="create",
     path="Assets/UI/MainMenu.uss",
     contents='''.root-container {
@@ -691,8 +727,9 @@ manage_ui(
 )
 
 # 3. Create a GameObject and attach UIDocument
-manage_gameobject(action="create", name="UIRoot")
+manage_gameobject(action="create", name="UIRoot", unity_instance=PROJECT_HASH)
 manage_ui(
+    unity_instance=PROJECT_HASH,
     action="attach_ui_document",
     target="UIRoot",
     source_asset="Assets/UI/MainMenu.uxml"
@@ -700,16 +737,17 @@ manage_ui(
 )
 
 # 4. Verify the visual tree
-manage_ui(action="get_visual_tree", target="UIRoot", max_depth=5)
+manage_ui(action="get_visual_tree", target="UIRoot", max_depth=5, unity_instance=PROJECT_HASH)
 ```
 
 #### Update Existing UI
 
 ```python
 # Read current content
-result = manage_ui(action="read", path="Assets/UI/MainMenu.uss")
+result = manage_ui(action="read", path="Assets/UI/MainMenu.uss", unity_instance=PROJECT_HASH)
 # Modify and update
 manage_ui(
+    unity_instance=PROJECT_HASH,
     action="update",
     path="Assets/UI/MainMenu.uss",
     contents=".title { font-size: 64px; color: yellow; }"
@@ -721,6 +759,7 @@ manage_ui(
 ```python
 # Create PanelSettings with ScaleWithScreenSize
 manage_ui(
+    unity_instance=PROJECT_HASH,
     action="create_panel_settings",
     path="Assets/UI/GamePanelSettings.asset",
     scale_mode="ScaleWithScreenSize",
@@ -729,6 +768,7 @@ manage_ui(
 
 # Attach UIDocument with custom PanelSettings
 manage_ui(
+    unity_instance=PROJECT_HASH,
     action="attach_ui_document",
     target="UIRoot",
     source_asset="Assets/UI/MainMenu.uxml",
@@ -789,7 +829,10 @@ Every GameObject under a Canvas gets a `RectTransform` instead of `Transform`. *
 Every UI element must be under a Canvas. A Canvas requires three components: `Canvas`, `CanvasScaler`, and `GraphicRaycaster`.
 
 ```python
-batch_execute(fail_fast=True, commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    fail_fast=True,
+    commands=[
     {"tool": "manage_gameobject", "params": {
         "action": "create", "name": "MainCanvas"
     }},
@@ -826,7 +869,10 @@ If no EventSystem exists in the scene, buttons and other interactive UI elements
 
 ```python
 # For activeInputHandler == "New" or "Both" (project has Input System package):
-batch_execute(fail_fast=True, commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    fail_fast=True,
+    commands=[
     {"tool": "manage_gameobject", "params": {
         "action": "create", "name": "EventSystem"
     }},
@@ -841,7 +887,10 @@ batch_execute(fail_fast=True, commands=[
 ])
 
 # For activeInputHandler == "Old" (legacy Input Manager only):
-batch_execute(fail_fast=True, commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    fail_fast=True,
+    commands=[
     {"tool": "manage_gameobject", "params": {
         "action": "create", "name": "EventSystem"
     }},
@@ -861,7 +910,10 @@ batch_execute(fail_fast=True, commands=[
 A Panel is an Image component used as a background/container for other UI elements.
 
 ```python
-batch_execute(fail_fast=True, commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    fail_fast=True,
+    commands=[
     {"tool": "manage_gameobject", "params": {
         "action": "create", "name": "MenuPanel", "parent": "MainCanvas"
     }},
@@ -890,7 +942,10 @@ batch_execute(fail_fast=True, commands=[
 TextMeshProUGUI automatically adds a RectTransform when added to a child of a Canvas. If `packages.textmeshpro` is `false`, use `UnityEngine.UI.Text` instead.
 
 ```python
-batch_execute(fail_fast=True, commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    fail_fast=True,
+    commands=[
     {"tool": "manage_gameobject", "params": {
         "action": "create", "name": "TitleText", "parent": "MenuPanel"
     }},
@@ -926,7 +981,10 @@ batch_execute(fail_fast=True, commands=[
 A Button needs an `Image` (visual) + `Button` (interaction) on the parent, and a child with `TextMeshProUGUI` for the label.
 
 ```python
-batch_execute(fail_fast=True, commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    fail_fast=True,
+    commands=[
     {"tool": "manage_gameobject", "params": {
         "action": "create", "name": "StartButton", "parent": "MenuPanel"
     }},
@@ -979,7 +1037,10 @@ A Slider requires a specific hierarchy and **must have its `fillRect` and `handl
 
 ```python
 # Step 1: Create hierarchy
-batch_execute(fail_fast=True, commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    fail_fast=True,
+    commands=[
     {"tool": "manage_gameobject", "params": {
         "action": "create", "name": "HealthSlider", "parent": "MainCanvas"
     }},
@@ -1060,7 +1121,10 @@ batch_execute(fail_fast=True, commands=[
 ])
 
 # Step 2: Wire Slider references (CRITICAL — slider won't work without this)
-batch_execute(fail_fast=True, commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    fail_fast=True,
+    commands=[
     {"tool": "manage_components", "params": {
         "action": "set_property", "target": "HealthSlider",
         "component_type": "Slider", "property": "fillRect",
@@ -1078,7 +1142,10 @@ batch_execute(fail_fast=True, commands=[
 
 ```python
 # Step 1: Create hierarchy
-batch_execute(fail_fast=True, commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    fail_fast=True,
+    commands=[
     {"tool": "manage_gameobject", "params": {
         "action": "create", "name": "NameInput", "parent": "MenuPanel"
     }},
@@ -1141,7 +1208,10 @@ batch_execute(fail_fast=True, commands=[
 ])
 
 # Step 2: Wire TMP_InputField references (CRITICAL)
-batch_execute(fail_fast=True, commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    fail_fast=True,
+    commands=[
     {"tool": "manage_components", "params": {
         "action": "set_property", "target": "NameInput",
         "component_type": "TMP_InputField", "property": "textViewport",
@@ -1163,7 +1233,10 @@ batch_execute(fail_fast=True, commands=[
 ### Create Toggle (With Reference Wiring)
 
 ```python
-batch_execute(fail_fast=True, commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    fail_fast=True,
+    commands=[
     {"tool": "manage_gameobject", "params": {
         "action": "create", "name": "SoundToggle", "parent": "MenuPanel"
     }},
@@ -1222,7 +1295,10 @@ batch_execute(fail_fast=True, commands=[
 ])
 
 # Wire Toggle references (CRITICAL)
-batch_execute(fail_fast=True, commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    fail_fast=True,
+    commands=[
     {"tool": "manage_components", "params": {
         "action": "set_property", "target": "SoundToggle",
         "component_type": "Toggle", "property": "graphic",
@@ -1236,7 +1312,10 @@ batch_execute(fail_fast=True, commands=[
 Layout groups auto-arrange child elements, so you can skip manual RectTransform positioning for children.
 
 ```python
-batch_execute(fail_fast=True, commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    fail_fast=True,
+    commands=[
     {"tool": "manage_components", "params": {
         "action": "add", "target": "MenuPanel",
         "component_type": "VerticalLayoutGroup"
@@ -1273,7 +1352,10 @@ Combines multiple templates into a full menu screen in two batch calls (default 
 
 ```python
 # Batch 1: Canvas + EventSystem + Panel + Title
-batch_execute(fail_fast=True, commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    fail_fast=True,
+    commands=[
     # Canvas
     {"tool": "manage_gameobject", "params": {"action": "create", "name": "MenuCanvas"}},
     {"tool": "manage_components", "params": {"action": "add", "target": "MenuCanvas", "component_type": "Canvas"}},
@@ -1299,7 +1381,10 @@ batch_execute(fail_fast=True, commands=[
 ])
 
 # Batch 2: Buttons
-batch_execute(fail_fast=True, commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    fail_fast=True,
+    commands=[
     # Play Button
     {"tool": "manage_gameobject", "params": {"action": "create", "name": "PlayButton", "parent": "MenuPanel"}},
     {"tool": "manage_components", "params": {"action": "add", "target": "PlayButton", "component_type": "Image"}},
@@ -1353,7 +1438,7 @@ Unity has two input systems that affect UI interaction, script input handling, a
 ### Detection
 
 ```python
-# Read mcpforunity://project/info
+# Read mcpforunity://project/info?unity_instance=PROJECT_HASH
 # activeInputHandler: "Old" | "New" | "Both"
 # packages.inputsystem: true/false (whether com.unity.inputsystem is installed)
 ```
@@ -1363,7 +1448,10 @@ Unity has two input systems that affect UI interaction, script input handling, a
 Used when `activeInputHandler` is `"Old"`. Uses `StandaloneInputModule` which reads from `Input.GetAxis()` / `Input.GetButton()`.
 
 ```python
-batch_execute(fail_fast=True, commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    fail_fast=True,
+    commands=[
     {"tool": "manage_gameobject", "params": {"action": "create", "name": "EventSystem"}},
     {"tool": "manage_components", "params": {
         "action": "add", "target": "EventSystem",
@@ -1399,7 +1487,10 @@ void Update()
 Used when `activeInputHandler` is `"New"` or `"Both"`. Uses `InputSystemUIInputModule` from the `com.unity.inputsystem` package.
 
 ```python
-batch_execute(fail_fast=True, commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    fail_fast=True,
+    commands=[
     {"tool": "manage_gameobject", "params": {"action": "create", "name": "EventSystem"}},
     {"tool": "manage_components", "params": {
         "action": "add", "target": "EventSystem",
@@ -1468,97 +1559,97 @@ Both systems are active simultaneously. For UI, prefer `InputSystemUIInputModule
 
 ```python
 # 1. Check Cinemachine availability
-manage_camera(action="ping")
+manage_camera(action="ping", unity_instance=PROJECT_HASH)
 
 # 2. Ensure Brain on main camera
-manage_camera(action="ensure_brain")
+manage_camera(action="ensure_brain", unity_instance=PROJECT_HASH)
 
 # 3. Create third-person camera with preset
-manage_camera(action="create_camera", properties={
+manage_camera(action="create_camera", unity_instance=PROJECT_HASH, properties={
     "name": "FollowCam", "preset": "third_person",
     "follow": "Player", "lookAt": "Player", "priority": 20
 })
 
 # 4. Fine-tune body
-manage_camera(action="set_body", target="FollowCam", properties={
+manage_camera(action="set_body", target="FollowCam", unity_instance=PROJECT_HASH, properties={
     "cameraDistance": 5.0, "shoulderOffset": [0.5, 0.5, 0]
 })
 
 # 5. Add camera shake
-manage_camera(action="set_noise", target="FollowCam", properties={
+manage_camera(action="set_noise", target="FollowCam", unity_instance=PROJECT_HASH, properties={
     "amplitudeGain": 0.3, "frequencyGain": 0.8
 })
 
 # 6. Verify with screenshot
-manage_camera(action="screenshot", camera="FollowCam", include_image=True, max_resolution=512)
+manage_camera(action="screenshot", camera="FollowCam", include_image=True, max_resolution=512, unity_instance=PROJECT_HASH)
 ```
 
 ### Multi-Camera Setup with Blending
 
 ```python
 # 1. Read current cameras
-# Read mcpforunity://scene/cameras
+# Read mcpforunity://scene/cameras?unity_instance=PROJECT_HASH
 
 # 2. Create gameplay camera (highest priority = active by default)
-manage_camera(action="create_camera", properties={
+manage_camera(action="create_camera", unity_instance=PROJECT_HASH, properties={
     "name": "GameplayCam", "preset": "follow",
     "follow": "Player", "lookAt": "Player", "priority": 10
 })
 
 # 3. Create cinematic camera (lower priority, activated on demand)
-manage_camera(action="create_camera", properties={
+manage_camera(action="create_camera", unity_instance=PROJECT_HASH, properties={
     "name": "CinematicCam", "preset": "dolly",
     "lookAt": "CutsceneTarget", "priority": 5
 })
 
 # 4. Set blend transition
-manage_camera(action="set_blend", properties={"style": "EaseInOut", "duration": 2.0})
+manage_camera(action="set_blend", properties={"style": "EaseInOut", "duration": 2.0}, unity_instance=PROJECT_HASH)
 
 # 5. Force cinematic camera for a cutscene
-manage_camera(action="force_camera", target="CinematicCam")
+manage_camera(action="force_camera", target="CinematicCam", unity_instance=PROJECT_HASH)
 
 # 6. Release override to return to priority-based selection
-manage_camera(action="release_override")
+manage_camera(action="release_override", unity_instance=PROJECT_HASH)
 ```
 
 ### Camera Without Cinemachine
 
 ```python
 # Tier 1 actions work with plain Unity Camera
-manage_camera(action="create_camera", properties={
+manage_camera(action="create_camera", unity_instance=PROJECT_HASH, properties={
     "name": "MainCam", "fieldOfView": 50
 })
 
 # Set lens
-manage_camera(action="set_lens", target="MainCam", properties={
+manage_camera(action="set_lens", target="MainCam", unity_instance=PROJECT_HASH, properties={
     "fieldOfView": 60, "nearClipPlane": 0.1, "farClipPlane": 1000
 })
 
 # Point camera at target (uses manage_gameobject look_at under the hood)
-manage_camera(action="set_target", target="MainCam", properties={
+manage_camera(action="set_target", target="MainCam", unity_instance=PROJECT_HASH, properties={
     "lookAt": "Player"
 })
 
 # Screenshot from this camera
-manage_camera(action="screenshot", camera="MainCam", include_image=True, max_resolution=512)
+manage_camera(action="screenshot", camera="MainCam", include_image=True, max_resolution=512, unity_instance=PROJECT_HASH)
 ```
 
 ### Camera Inspection Workflow
 
 ```python
 # 1. Read all cameras via resource
-# Read mcpforunity://scene/cameras
+# Read mcpforunity://scene/cameras?unity_instance=PROJECT_HASH
 # → Shows brain status, all Cinemachine cameras (priority, pipeline, targets),
 #   all Unity cameras (FOV, depth, brain)
 
 # 2. Get brain status for blending info
-manage_camera(action="get_brain_status")
+manage_camera(action="get_brain_status", unity_instance=PROJECT_HASH)
 
 # 3. List cameras via tool (alternative to resource)
-manage_camera(action="list_cameras")
+manage_camera(action="list_cameras", unity_instance=PROJECT_HASH)
 
 # 4. Multi-view screenshot to see from different angles
-manage_camera(action="screenshot_multiview", max_resolution=480)
+manage_camera(action="screenshot_multiview", max_resolution=480, unity_instance=PROJECT_HASH)
 ```
 
 ### Scene View Screenshot Workflow
@@ -1567,14 +1658,16 @@ Use `capture_source="scene_view"` to capture the editor's Scene View viewport �
 
 ```python
 # 1. Capture the Scene View as-is
-manage_camera(action="screenshot", capture_source="scene_view", include_image=True)
+manage_camera(action="screenshot", capture_source="scene_view", include_image=True, unity_instance=PROJECT_HASH)
 
 # 2. Frame on a specific object first, then capture
 manage_camera(action="screenshot", capture_source="scene_view",
+    unity_instance=PROJECT_HASH,
     view_target="Player", include_image=True, max_resolution=512)
 
 # 3. Frame on UI Canvas (RectTransform bounds are supported)
 manage_camera(action="screenshot", capture_source="scene_view",
+    unity_instance=PROJECT_HASH,
     view_target="Canvas", include_image=True)
 
 # Limitations: scene_view does not support batch, view_position, view_rotation, or camera selection.
@@ -1585,7 +1678,7 @@ manage_camera(action="screenshot", capture_source="scene_view",
 
 ## ProBuilder Workflows
 
-When `com.unity.probuilder` is installed, prefer ProBuilder shapes over primitive GameObjects for any geometry that needs editing, multi-material faces, or non-trivial shapes. Check availability first with `manage_probuilder(action="ping")`.
+When `com.unity.probuilder` is installed, prefer ProBuilder shapes over primitive GameObjects for any geometry that needs editing, multi-material faces, or non-trivial shapes. Check availability first with `manage_probuilder(action="ping", unity_instance=PROJECT_HASH)`.
 
 See [ProBuilder Workflow Guide](probuilder-guide.md) for full reference with complex object examples.
 
@@ -1593,8 +1686,8 @@ See [ProBuilder Workflow Guide](probuilder-guide.md) for full reference with com
 
 | Need | Use Primitives | Use ProBuilder |
 |------|---------------|----------------|
-| Simple placeholder cube | `manage_gameobject(action="create", primitive_type="Cube")` | - |
-| Editable geometry | - | `manage_probuilder(action="create_shape", ...)` |
+| Simple placeholder cube | `manage_gameobject(action="create", primitive_type="Cube", unity_instance=PROJECT_HASH)` | - |
+| Editable geometry | - | `manage_probuilder(action="create_shape", ..., unity_instance=PROJECT_HASH)` |
 | Per-face materials | - | `set_face_material` |
 | Custom shapes (L-rooms, arches) | - | `create_poly_shape` or `create_shape` |
 | Mesh editing (extrude, bevel) | - | Face/edge/vertex operations |
@@ -1604,10 +1697,12 @@ See [ProBuilder Workflow Guide](probuilder-guide.md) for full reference with com
 
 ```python
 # 1. Check ProBuilder availability
-manage_probuilder(action="ping")
+manage_probuilder(action="ping", unity_instance=PROJECT_HASH)
 
 # 2. Create shapes (use batch for multiple)
-batch_execute(commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    commands=[
     {"tool": "manage_probuilder", "params": {
         "action": "create_shape",
         "properties": {"shape_type": "Cube", "name": "Floor", "width": 20, "height": 0.2, "depth": 20}
@@ -1626,19 +1721,22 @@ batch_execute(commands=[
 
 # 3. Edit geometry (always get_mesh_info first!)
 info = manage_probuilder(action="get_mesh_info", target="Wall1",
+    unity_instance=PROJECT_HASH,
     properties={"include": "faces"})
 # Find direction="front" face, subdivide it, delete center for a window
 
 # 4. Apply materials per face
 manage_probuilder(action="set_face_material", target="Floor",
+    unity_instance=PROJECT_HASH,
     properties={"faceIndices": [0], "materialPath": "Assets/Materials/Stone.mat"})
 
 # 5. Smooth organic shapes
 manage_probuilder(action="auto_smooth", target="Pillar1",
+    unity_instance=PROJECT_HASH,
     properties={"angleThreshold": 45})
 
 # 6. Screenshot to verify
-manage_camera(action="screenshot", include_image=True, max_resolution=512)
+manage_camera(action="screenshot", include_image=True, max_resolution=512, unity_instance=PROJECT_HASH)
 ```
 
 ### Edit-Verify Loop Pattern
@@ -1647,14 +1745,14 @@ Face indices change after every edit. Always re-query:
 
 ```python
 # WRONG: Assume face indices are stable
-manage_probuilder(action="subdivide", target="Obj", properties={"faceIndices": [2]})
-manage_probuilder(action="delete_faces", target="Obj", properties={"faceIndices": [5]})  # Index may be wrong!
+manage_probuilder(action="subdivide", target="Obj", properties={"faceIndices": [2]}, unity_instance=PROJECT_HASH)
+manage_probuilder(action="delete_faces", target="Obj", properties={"faceIndices": [5]}, unity_instance=PROJECT_HASH)  # Index may be wrong!
 
 # RIGHT: Re-query after each edit
-manage_probuilder(action="subdivide", target="Obj", properties={"faceIndices": [2]})
-info = manage_probuilder(action="get_mesh_info", target="Obj", properties={"include": "faces"})
+manage_probuilder(action="subdivide", target="Obj", properties={"faceIndices": [2]}, unity_instance=PROJECT_HASH)
+info = manage_probuilder(action="get_mesh_info", target="Obj", properties={"include": "faces"}, unity_instance=PROJECT_HASH)
 # Find the correct face by direction/center, then delete
-manage_probuilder(action="delete_faces", target="Obj", properties={"faceIndices": [correct_index]})
+manage_probuilder(action="delete_faces", target="Obj", properties={"faceIndices": [correct_index]}, unity_instance=PROJECT_HASH)
 ```
 
 ### Known Limitations
@@ -1673,13 +1771,14 @@ Add post-processing effects to a URP/HDRP scene using Volumes.
 
 ```python
 # 1. Check pipeline status and available effects
-manage_graphics(action="ping")
+manage_graphics(action="ping", unity_instance=PROJECT_HASH)
 
 # 2. List available volume effects for the active pipeline
-manage_graphics(action="volume_list_effects")
+manage_graphics(action="volume_list_effects", unity_instance=PROJECT_HASH)
 
 # 3. Create a global post-processing volume with common effects
 manage_graphics(action="volume_create", name="GlobalPostProcess", is_global=True,
+    unity_instance=PROJECT_HASH,
     effects=[
         {"type": "Bloom", "parameters": {"intensity": 1.0, "threshold": 0.9, "scatter": 0.7}},
         {"type": "Vignette", "parameters": {"intensity": 0.35}},
@@ -1688,14 +1787,15 @@ manage_graphics(action="volume_create", name="GlobalPostProcess", is_global=True
     ])
 
 # 4. Verify the volume was created
-# Read mcpforunity://scene/volumes
+# Read mcpforunity://scene/volumes?unity_instance=PROJECT_HASH
 
 # 5. Fine-tune an effect parameter
 manage_graphics(action="volume_set_effect", target="GlobalPostProcess",
+    unity_instance=PROJECT_HASH,
     effect="Bloom", parameters={"intensity": 1.5})
 
 # 6. Screenshot to verify visual result
-manage_camera(action="screenshot", include_image=True, max_resolution=512)
+manage_camera(action="screenshot", include_image=True, max_resolution=512, unity_instance=PROJECT_HASH)
 ```
 
 **Tips:**
@@ -1710,39 +1810,41 @@ Add a custom full-screen shader pass using URP Renderer Features.
 
 ```python
 # 1. Check pipeline and confirm URP
-manage_graphics(action="ping")
+manage_graphics(action="ping", unity_instance=PROJECT_HASH)
 
 # 2. Create a material for the full-screen effect
 manage_material(action="create",
+    unity_instance=PROJECT_HASH,
     material_path="Assets/Materials/GrayscaleEffect.mat",
     shader="Shader Graphs/GrayscaleFullScreen")
 
 # 3. List current renderer features
-manage_graphics(action="feature_list")
+manage_graphics(action="feature_list", unity_instance=PROJECT_HASH)
 
 # 4. Add a FullScreenPassRendererFeature with the material
 manage_graphics(action="feature_add",
+    unity_instance=PROJECT_HASH,
     feature_type="FullScreenPassRendererFeature",
     name="GrayscalePass",
     material="Assets/Materials/GrayscaleEffect.mat")
 
 # 5. Verify it was added
-manage_graphics(action="feature_list")
+manage_graphics(action="feature_list", unity_instance=PROJECT_HASH)
 
 # 6. Toggle it on/off to compare
-manage_graphics(action="feature_toggle", index=0, active=False)  # disable
-manage_camera(action="screenshot", include_image=True, max_resolution=512)
+manage_graphics(action="feature_toggle", index=0, active=False, unity_instance=PROJECT_HASH)  # disable
+manage_camera(action="screenshot", include_image=True, max_resolution=512, unity_instance=PROJECT_HASH)
 
-manage_graphics(action="feature_toggle", index=0, active=True)   # re-enable
-manage_camera(action="screenshot", include_image=True, max_resolution=512)
+manage_graphics(action="feature_toggle", index=0, active=True, unity_instance=PROJECT_HASH)   # re-enable
+manage_camera(action="screenshot", include_image=True, max_resolution=512, unity_instance=PROJECT_HASH)
 
 # 7. Reorder features if needed (execution order matters)
-manage_graphics(action="feature_reorder", order=[1, 0, 2])
+manage_graphics(action="feature_reorder", order=[1, 0, 2], unity_instance=PROJECT_HASH)
 ```
 
 **Tips:**
 - Renderer Features are URP-only. `feature_*` actions return an error on HDRP or Built-in RP.
-- Read `mcpforunity://pipeline/renderer-features` to inspect features without modifying.
+- Read `mcpforunity://pipeline/renderer-features?unity_instance=PROJECT_HASH` to inspect features without modifying.
 - Feature execution order affects the final image. Use `feature_reorder` to control pass ordering.
 
 ### Configuring Light Baking
@@ -1752,15 +1854,17 @@ Set up lightmaps, light probes, and reflection probes for baked GI.
 ```python
 # 1. Set lights to Baked or Mixed mode
 manage_components(action="set_property", target="Directional Light",
+    unity_instance=PROJECT_HASH,
     component_type="Light", properties={"lightmapBakeType": 1})  # 1 = Mixed
 
 # 2. Mark static objects for lightmapping
 manage_gameobject(action="modify", target="Environment",
+    unity_instance=PROJECT_HASH,
     component_properties={"StaticFlags": "ContributeGI"})
 
 # 3. Configure lightmap settings
-manage_graphics(action="bake_get_settings")
-manage_graphics(action="bake_set_settings", settings={
+manage_graphics(action="bake_get_settings", unity_instance=PROJECT_HASH)
+manage_graphics(action="bake_set_settings", unity_instance=PROJECT_HASH, settings={
     "lightmapper": 1,           # 1 = Progressive GPU
     "directSamples": 32,
     "indirectSamples": 128,
@@ -1770,25 +1874,27 @@ manage_graphics(action="bake_set_settings", settings={
 
 # 4. Place light probes for dynamic objects
 manage_graphics(action="bake_create_light_probe_group", name="MainProbeGrid",
+    unity_instance=PROJECT_HASH,
     position=[0, 1.5, 0], grid_size=[5, 3, 5], spacing=3.0)
 
 # 5. Place a reflection probe for an interior room
 manage_graphics(action="bake_create_reflection_probe", name="RoomReflection",
+    unity_instance=PROJECT_HASH,
     position=[0, 2, 0], size=[8, 4, 8], resolution=256,
     hdr=True, box_projection=True)
 
 # 6. Start async bake
-manage_graphics(action="bake_start", async_bake=True)
+manage_graphics(action="bake_start", async_bake=True, unity_instance=PROJECT_HASH)
 
 # 7. Poll bake status
-manage_graphics(action="bake_status")
+manage_graphics(action="bake_status", unity_instance=PROJECT_HASH)
 # Repeat until complete
 
 # 8. Bake the reflection probe separately if needed
-manage_graphics(action="bake_reflection_probe", target="RoomReflection")
+manage_graphics(action="bake_reflection_probe", target="RoomReflection", unity_instance=PROJECT_HASH)
 
 # 9. Check rendering stats after bake
-manage_graphics(action="stats_get")
+manage_graphics(action="stats_get", unity_instance=PROJECT_HASH)
 ```
 
 **Tips:**
@@ -1805,21 +1911,21 @@ manage_graphics(action="stats_get")
 
 ```python
 # 1. Check what's installed
-manage_packages(action="ping")
-manage_packages(action="list_packages")
+manage_packages(action="ping", unity_instance=PROJECT_HASH)
+manage_packages(action="list_packages", unity_instance=PROJECT_HASH)
 # Poll status until complete
-manage_packages(action="status", job_id="<job_id>")
+manage_packages(action="status", job_id="<job_id>", unity_instance=PROJECT_HASH)
 
 # 2. Install the package
-manage_packages(action="add_package", package="com.unity.inputsystem")
+manage_packages(action="add_package", package="com.unity.inputsystem", unity_instance=PROJECT_HASH)
 # Poll until domain reload completes
-manage_packages(action="status", job_id="<job_id>")
+manage_packages(action="status", job_id="<job_id>", unity_instance=PROJECT_HASH)
 
 # 3. Verify no compilation errors
-read_console(types=["error"], count=10)
+read_console(types=["error"], count=10, unity_instance=PROJECT_HASH)
 
 # 4. Confirm it's installed
-manage_packages(action="get_package_info", package="com.unity.inputsystem")
+manage_packages(action="get_package_info", package="com.unity.inputsystem", unity_instance=PROJECT_HASH)
 ```
 
 ### Add OpenUPM Registry and Install Package
@@ -1827,6 +1933,7 @@ manage_packages(action="get_package_info", package="com.unity.inputsystem")
 ```python
 # 1. Add the OpenUPM scoped registry
 manage_packages(
+    unity_instance=PROJECT_HASH,
     action="add_registry",
     name="OpenUPM",
     url="https://package.openupm.com",
@@ -1834,23 +1941,23 @@ manage_packages(
 )
 
 # 2. Force resolution to pick up the new registry
-manage_packages(action="resolve_packages")
+manage_packages(action="resolve_packages", unity_instance=PROJECT_HASH)
 
 # 3. Install a package from OpenUPM
-manage_packages(action="add_package", package="com.cysharp.unitask")
-manage_packages(action="status", job_id="<job_id>")
+manage_packages(action="add_package", package="com.cysharp.unitask", unity_instance=PROJECT_HASH)
+manage_packages(action="status", job_id="<job_id>", unity_instance=PROJECT_HASH)
 ```
 
 ### Safe Package Removal
 
 ```python
 # 1. Check dependencies before removing
-manage_packages(action="remove_package", package="com.unity.modules.ui")
+manage_packages(action="remove_package", package="com.unity.modules.ui", unity_instance=PROJECT_HASH)
 # If blocked: "Cannot remove: 3 package(s) depend on it"
 
 # 2. Force removal if you're sure
-manage_packages(action="remove_package", package="com.unity.modules.ui", force=True)
-manage_packages(action="status", job_id="<job_id>")
+manage_packages(action="remove_package", package="com.unity.modules.ui", force=True, unity_instance=PROJECT_HASH)
+manage_packages(action="status", job_id="<job_id>", unity_instance=PROJECT_HASH)
 ```
 
 ### Install from Git URL (e.g., NuGetForUnity)
@@ -1858,10 +1965,11 @@ manage_packages(action="status", job_id="<job_id>")
 ```python
 # Git URLs trigger a security warning — ensure the source is trusted
 manage_packages(
+    unity_instance=PROJECT_HASH,
     action="add_package",
     package="https://github.com/GlitchEnzo/NuGetForUnity.git?path=/src/NuGetForUnity"
 )
-manage_packages(action="status", job_id="<job_id>")
+manage_packages(action="status", job_id="<job_id>", unity_instance=PROJECT_HASH)
 ```
 
 ---
@@ -1879,26 +1987,26 @@ Use `deploy_package` to copy your local MCPForUnity source into the project's in
 # script_apply_edits or create_script as needed
 
 # 2. Deploy the updated package (copies source → installed package, creates backup)
-manage_editor(action="deploy_package")
+manage_editor(action="deploy_package", unity_instance=PROJECT_HASH)
 
 # 3. Wait for recompilation to finish
-refresh_unity(mode="force", compile="request", wait_for_ready=True)
+refresh_unity(mode="force", compile="request", wait_for_ready=True, unity_instance=PROJECT_HASH)
 
 # 4. Check for compilation errors
-read_console(types=["error"], count=10, include_stacktrace=True)
+read_console(types=["error"], count=10, include_stacktrace=True, unity_instance=PROJECT_HASH)
 
 # 5. Test the changes
-run_tests(mode="EditMode")
+run_tests(mode="EditMode", unity_instance=PROJECT_HASH)
 ```
 
 ### Rollback After Failed Deploy
 
 ```python
 # Restore from the automatic pre-deployment backup
-manage_editor(action="restore_package")
+manage_editor(action="restore_package", unity_instance=PROJECT_HASH)
 
 # Wait for recompilation
-refresh_unity(mode="force", compile="request", wait_for_ready=True)
+refresh_unity(mode="force", compile="request", wait_for_ready=True, unity_instance=PROJECT_HASH)
 ```
 
 ---
@@ -1915,19 +2023,19 @@ Use `unity_reflect` and `unity_docs` to verify Unity APIs before writing C# code
 
 ```python
 # Step 1: Search for the type you need
-unity_reflect(action="search", query="NavMesh")
+unity_reflect(action="search", query="NavMesh", unity_instance=PROJECT_HASH)
 # → Returns matching types: NavMeshAgent, NavMeshPath, NavMeshHit, etc.
 
 # Step 2: Get member summary for the type
-unity_reflect(action="get_type", class_name="UnityEngine.AI.NavMeshAgent")
+unity_reflect(action="get_type", class_name="UnityEngine.AI.NavMeshAgent", unity_instance=PROJECT_HASH)
 # → Returns all methods, properties, fields (names only)
 
 # Step 3: Get full signature for specific members you plan to use
-unity_reflect(action="get_member", class_name="NavMeshAgent", member_name="SetDestination")
+unity_reflect(action="get_member", class_name="NavMeshAgent", member_name="SetDestination", unity_instance=PROJECT_HASH)
 # → Returns parameter types, return type, all overloads
 
 # Step 4: Get official docs for usage patterns and examples
-unity_docs(action="get_doc", class_name="NavMeshAgent", member_name="SetDestination")
+unity_docs(action="get_doc", class_name="NavMeshAgent", member_name="SetDestination", unity_instance=PROJECT_HASH)
 # → Returns description, signatures, parameters, code examples
 ```
 
@@ -1937,10 +2045,11 @@ Use `unity_docs` `lookup` action to search multiple APIs in a single call:
 
 ```python
 # Search ScriptReference + Manual in parallel (+ package docs if package/pkg_version provided)
-unity_docs(action="lookup", queries="Physics.Raycast,NavMeshAgent,Light2D")
+unity_docs(action="lookup", queries="Physics.Raycast,NavMeshAgent,Light2D", unity_instance=PROJECT_HASH)
 
 # Include package docs in the search
 unity_docs(action="lookup", query="VolumeProfile",
+    unity_instance=PROJECT_HASH,
            package="com.unity.render-pipelines.universal", pkg_version="17.0")
 ```
 
@@ -1950,7 +2059,7 @@ The `lookup` action automatically searches project assets for asset-related quer
 
 ```python
 # This searches both docs AND project assets for shader-related content
-unity_docs(action="lookup", query="Lit shader")
+unity_docs(action="lookup", query="Lit shader", unity_instance=PROJECT_HASH)
 # → Returns doc hits + matching project assets (shaders, materials, etc.)
 ```
 
@@ -1958,10 +2067,11 @@ unity_docs(action="lookup", query="Lit shader")
 
 ```python
 # Fetch Unity Manual pages (execution order, scripting concepts, etc.)
-unity_docs(action="get_manual", slug="execution-order")
+unity_docs(action="get_manual", slug="execution-order", unity_instance=PROJECT_HASH)
 
 # Fetch package-specific documentation
 unity_docs(action="get_package_doc",
+    unity_instance=PROJECT_HASH,
            package="com.unity.render-pipelines.universal",
            page="2d-index", pkg_version="17.0")
 ```
@@ -1970,10 +2080,10 @@ unity_docs(action="get_package_doc",
 
 ```python
 # Specify Unity version for version-specific docs
-unity_docs(action="get_doc", class_name="Camera", member_name="main", version="6000.0.38f1")
+unity_docs(action="get_doc", class_name="Camera", member_name="main", version="6000.0.38f1", unity_instance=PROJECT_HASH)
 
 # Use reflection to check what's actually available in the running editor
-unity_reflect(action="search", query="InputAction", scope="packages")
+unity_reflect(action="search", query="InputAction", scope="packages", unity_instance=PROJECT_HASH)
 ```
 
 ---
@@ -1986,7 +2096,9 @@ Use `batch_execute` to search for multiple things in a single call instead of ca
 
 ```python
 # Instead of 4 separate find_gameobjects calls, batch them:
-batch_execute(commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    commands=[
     {"tool": "find_gameobjects", "params": {"search_term": "Camera", "search_method": "by_component"}},
     {"tool": "find_gameobjects", "params": {"search_term": "Rigidbody", "search_method": "by_component"}},
     {"tool": "find_gameobjects", "params": {"search_term": "Player", "search_method": "by_tag"}},
@@ -1999,7 +2111,7 @@ batch_execute(commands=[
 
 ```python
 # Find all enemies
-enemies = find_gameobjects(search_term="Enemy", search_method="by_tag")
+enemies = find_gameobjects(search_term="Enemy", search_method="by_tag", unity_instance=PROJECT_HASH)
 
 # Update health on all enemies
 commands = []
@@ -2017,7 +2129,7 @@ for enemy_id in enemies["ids"]:
 
 # Execute in batches
 for i in range(0, len(commands), 25):
-    batch_execute(commands=commands[i:i+25], parallel=True)
+    batch_execute(commands=commands[i:i+25], parallel=True, unity_instance=PROJECT_HASH)
 ```
 
 ### Mass Object Creation with Variations
@@ -2038,14 +2150,14 @@ for i in range(20):
         }
     })
 
-batch_execute(commands=commands, parallel=True)
+batch_execute(commands=commands, parallel=True, unity_instance=PROJECT_HASH)
 ```
 
 ### Cleanup Pattern
 
 ```python
 # Find all temporary objects
-temps = find_gameobjects(search_term="Temp_", search_method="by_name")
+temps = find_gameobjects(search_term="Temp_", search_method="by_name", unity_instance=PROJECT_HASH)
 
 # Delete in batch
 commands = [
@@ -2053,7 +2165,7 @@ commands = [
     for id in temps["ids"]
 ]
 
-batch_execute(commands=commands, fail_fast=False)
+batch_execute(commands=commands, fail_fast=False, unity_instance=PROJECT_HASH)
 ```
 
 ---
@@ -2064,13 +2176,13 @@ batch_execute(commands=commands, fail_fast=False)
 
 ```python
 try:
-    apply_text_edits(uri=script_uri, edits=[...], precondition_sha256=old_sha)
+    apply_text_edits(uri=script_uri, edits=[...], precondition_sha256=old_sha, unity_instance=PROJECT_HASH)
 except Exception as e:
     if "stale_file" in str(e):
         # Re-fetch SHA
-        new_sha = get_sha(uri=script_uri)
+        new_sha = get_sha(uri=script_uri, unity_instance=PROJECT_HASH)
         # Retry with new SHA
-        apply_text_edits(uri=script_uri, edits=[...], precondition_sha256=new_sha["sha256"])
+        apply_text_edits(uri=script_uri, edits=[...], precondition_sha256=new_sha["sha256"], unity_instance=PROJECT_HASH)
 ```
 
 ### Domain Reload Recovery
@@ -2083,7 +2195,7 @@ import time
 max_retries = 5
 for attempt in range(max_retries):
     try:
-        editor_state = read_resource("mcpforunity://editor/state")
+        editor_state = read_resource("mcpforunity://editor/state?unity_instance=PROJECT_HASH")
         if editor_state["ready_for_tools"]:
             break
     except:
@@ -2095,16 +2207,16 @@ for attempt in range(max_retries):
 ```python
 # If tools fail due to compilation:
 # 1. Check console for errors
-errors = read_console(types=["error"], count=20)
+errors = read_console(types=["error"], count=20, unity_instance=PROJECT_HASH)
 
 # 2. Fix the script errors
 # ... edit scripts ...
 
 # 3. Force refresh
-refresh_unity(mode="force", scope="scripts", compile="request", wait_for_ready=True)
+refresh_unity(mode="force", scope="scripts", compile="request", wait_for_ready=True, unity_instance=PROJECT_HASH)
 
 # 4. Verify clean console
-errors = read_console(types=["error"], count=5)
+errors = read_console(types=["error"], count=5, unity_instance=PROJECT_HASH)
 if not errors["messages"]:
     # Safe to proceed with tools
     pass

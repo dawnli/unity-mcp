@@ -121,10 +121,10 @@ class TestUnityInstanceMiddlewareSessionManagement:
             "Middleware must store and retrieve instance per session"
 
     @pytest.mark.asyncio
-    async def test_middleware_uses_client_id_over_session_id(self):
+    async def test_middleware_uses_session_id_over_client_id(self):
         """
-        Current behavior: get_session_key() prioritizes client_id for stability,
-        falling back to 'global' when unavailable.
+        Current behavior: get_session_key() prioritizes the MCP session id
+        so shared HTTP server clients do not overwrite each other.
         """
         middleware = UnityInstanceMiddleware()
 
@@ -133,13 +133,13 @@ class TestUnityInstanceMiddlewareSessionManagement:
         ctx.session_id = "unstable-session-id"
 
         key = await middleware.get_session_key(ctx)
-        assert key == "stable-client-id"
+        assert key == "unstable-session-id"
 
     @pytest.mark.asyncio
     async def test_middleware_falls_back_to_global_key(self):
         """
-        Current behavior: When client_id is None/missing, use 'global' key.
-        This allows single-user local mode to work without session tracking.
+        Current behavior: When session_id is present, use it even if
+        client_id is None.
         """
         middleware = UnityInstanceMiddleware()
 
@@ -149,7 +149,7 @@ class TestUnityInstanceMiddlewareSessionManagement:
         ctx.get_state = AsyncMock(return_value=None)
 
         key = await middleware.get_session_key(ctx)
-        assert key == "global"
+        assert key == "session-id"
 
     @pytest.mark.asyncio
     async def test_middleware_isolates_multiple_sessions(self):
@@ -1462,8 +1462,8 @@ class TestTransportEdgeCases:
     @pytest.mark.asyncio
     async def test_middleware_handles_client_id_false_but_not_none(self):
         """
-        Current behavior: get_session_key checks isinstance(client_id, str) AND len,
-        so falsy non-string values fall through to 'global'.
+        Current behavior: get_session_key prefers session_id before legacy
+        client_id/user/global fallbacks.
         """
         middleware = UnityInstanceMiddleware()
 
@@ -1473,7 +1473,7 @@ class TestTransportEdgeCases:
         ctx.get_state = AsyncMock(return_value=None)
 
         key = await middleware.get_session_key(ctx)
-        assert key == "global"  # Empty string doesn't pass isinstance+truthy check
+        assert key == "session-id"
 
     def test_plugin_hub_encoding_is_json(self):
         """

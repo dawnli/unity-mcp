@@ -7,6 +7,7 @@ into the request-scoped state, allowing tools to access it via ctx.get_state("un
 from threading import RLock
 import logging
 import time
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 
@@ -17,6 +18,15 @@ from transport.plugin_hub import PluginHub
 logger = logging.getLogger("mcp-for-unity-server")
 # Separate logger that propagates to root -> stderr so diagnostics show in console
 _diag = logging.getLogger("transport.unity_instance_middleware")
+
+UNITY_INSTANCE_PARAMETER_SCHEMA = {
+    "type": "string",
+    "description": (
+        "Optional Unity project hash, or Name@hash, used to route this call "
+        "to a specific Unity Editor instance on the shared MCP server."
+    ),
+}
+INSTANCE_ROUTED_SERVER_TOOLS = {"execute_custom_tool"}
 
 # Store a global reference to the middleware instance so tools can interact
 # with it to set or clear the active unity instance.
@@ -72,18 +82,27 @@ class UnityInstanceMiddleware(Middleware):
         """
         Derive a stable key for the calling session.
 
-        Prioritizes client_id for stability.
-        In remote-hosted mode, falls back to user_id for session isolation.
-        Otherwise falls back to 'global' (assuming single-user local mode).
+        HTTP clients expose the MCP session through ctx.session_id. Use it
+        first so multiple AI IDE clients sharing one MCP server keep separate
+        compatibility selections. Fall back to older identifiers when a
+        transport does not expose session_id.
         """
+        try:
+            session_id = getattr(ctx, "session_id", None)
+        except RuntimeError:
+            session_id = None
+        if isinstance(session_id, str) and session_id:
+            return session_id
+
         client_id = getattr(ctx, "client_id", None)
         if isinstance(client_id, str) and client_id:
             return client_id
 
-        # In remote-hosted mode, use user_id so different users get isolated instance selections
-        user_id = await ctx.get_state("user_id")
-        if isinstance(user_id, str) and user_id:
-            return f"user:{user_id}"
+        get_state_fn = getattr(ctx, "get_state", None)
+        if callable(get_state_fn):
+            user_id = await get_state_fn("user_id")
+            if isinstance(user_id, str) and user_id:
+                return f"user:{user_id}"
 
         # Fallback to global for local dev stability
         return "global"
@@ -172,7 +191,7 @@ class UnityInstanceMiddleware(Middleware):
             if transport == "http":
                 raise ValueError(
                     f"Port-based targeting ('{value}') is not supported in HTTP transport mode. "
-                    "Use Name@hash or a hash prefix. Read mcpforunity://instances for available instances."
+                    "Use the project hash computed from the absolute Unity project path, or a unique hash prefix."
                 )
             port_int = int(value)
             instances = await self._discover_instances(ctx)
@@ -201,7 +220,7 @@ class UnityInstanceMiddleware(Middleware):
             available = ", ".join(ids) or "none"
             raise ValueError(
                 f"Instance '{value}' not found. Available: {available}. "
-                "Read mcpforunity://instances for current sessions."
+                "Confirm the computed project hash; use mcpforunity://instances only as a diagnostic fallback."
             )
 
         # Hash prefix match
@@ -216,12 +235,12 @@ class UnityInstanceMiddleware(Middleware):
             ambiguous = ", ".join(getattr(m, "id", "?") for m in matches)
             raise ValueError(
                 f"Hash prefix '{value}' is ambiguous ({ambiguous}). "
-                "Provide the full Name@hash from mcpforunity://instances."
+                "Provide the full computed project hash."
             )
         available = ", ".join(ids) or "none"
         raise ValueError(
             f"No running Unity instance matches '{value}'. Available: {available}. "
-            "Read mcpforunity://instances for current sessions."
+            "Confirm the absolute project path used for hash calculation; use mcpforunity://instances only for diagnostics."
         )
 
     async def _maybe_autoselect_instance(self, ctx) -> str | None:
@@ -333,6 +352,44 @@ class UnityInstanceMiddleware(Middleware):
         from transport.unity_transport import _resolve_user_id_from_request
         return await _resolve_user_id_from_request()
 
+    def _extract_inline_unity_instance(self, context: MiddlewareContext) -> str | None:
+        """
+        Extract per-call routing from tool arguments or resource URI query.
+
+        Tool calls carry unity_instance in arguments. Resource reads carry it
+        in the URI query string, which is removed before FastMCP resolves the
+        registered resource.
+        """
+        message = getattr(context, "message", None)
+        msg_args = getattr(message, "arguments", None)
+        if isinstance(msg_args, dict) and "unity_instance" in msg_args:
+            raw = msg_args.pop("unity_instance")
+            return None if raw is None else str(raw).strip()
+
+        raw_uri = getattr(message, "uri", None)
+        if raw_uri is None:
+            return None
+
+        uri = str(raw_uri)
+        parts = urlsplit(uri)
+        if not parts.query:
+            return None
+
+        pairs = parse_qsl(parts.query, keep_blank_values=True)
+        values = [value.strip() for key, value in pairs if key == "unity_instance"]
+        if not values:
+            return None
+
+        remaining = [(key, value) for key, value in pairs if key != "unity_instance"]
+        new_query = urlencode(remaining, doseq=True)
+        cleaned_uri = urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
+        try:
+            setattr(message, "uri", cleaned_uri)
+        except Exception:
+            logger.debug("Could not strip unity_instance from resource URI", exc_info=True)
+
+        return next((value for value in values if value), None)
+
     async def _inject_unity_instance(self, context: MiddlewareContext) -> None:
         """Inject active Unity instance and user_id into context if available."""
         ctx = context.fastmcp_context
@@ -346,20 +403,14 @@ class UnityInstanceMiddleware(Middleware):
         if user_id:
             await ctx.set_state("user_id", user_id)
 
-        # Per-call routing: check if this tool call explicitly specifies unity_instance.
-        # context.message.arguments is a mutable dict on CallToolRequestParams; resource
-        # reads use ReadResourceRequestParams which has no .arguments, so this is a no-op for them.
-        # We pop the key here so Pydantic's type_adapter.validate_python() never sees it.
+        # Per-call routing: check if this request explicitly specifies unity_instance.
+        # Tool calls use arguments; resource reads use the URI query string.
         active_instance: str | None = None
-        msg_args = getattr(getattr(context, "message", None), "arguments", None)
-        if isinstance(msg_args, dict) and "unity_instance" in msg_args:
-            raw = msg_args.pop("unity_instance")
-            if raw is not None:
-                raw_str = str(raw).strip()
-                if raw_str:
-                    # Raises ValueError with a user-friendly message on invalid input.
-                    active_instance = await self._resolve_instance_value(raw_str, ctx)
-                    logger.debug("Per-call unity_instance resolved to: %s", active_instance)
+        raw_inline_instance = self._extract_inline_unity_instance(context)
+        if raw_inline_instance:
+            # Raises ValueError with a user-friendly message on invalid input.
+            active_instance = await self._resolve_instance_value(raw_inline_instance, ctx)
+            logger.debug("Per-call unity_instance resolved to: %s", active_instance)
 
         if not active_instance:
             active_instance = await self.get_active_instance(ctx)
@@ -440,14 +491,17 @@ class UnityInstanceMiddleware(Middleware):
             len(tools), tool_names_from_fastmcp,
         )
 
+        self._refresh_tool_visibility_metadata_from_registry()
+
         if not self._should_filter_tool_listing():
             _diag.debug("on_list_tools: skipping middleware filter (not HTTP or PluginHub not configured)")
+            self._add_unity_instance_parameter_to_tools(tools)
             return tools
 
-        self._refresh_tool_visibility_metadata_from_registry()
         enabled_tool_names = await self._resolve_enabled_tool_names_for_context(context)
         if enabled_tool_names is None:
             _diag.debug("on_list_tools: no Unity session data, returning %d tools from FastMCP as-is", len(tools))
+            self._add_unity_instance_parameter_to_tools(tools)
             return tools
 
         filtered = []
@@ -461,7 +515,37 @@ class UnityInstanceMiddleware(Middleware):
             "enabled_names=%s",
             len(filtered), len(tools), sorted(enabled_tool_names),
         )
+        self._add_unity_instance_parameter_to_tools(filtered)
         return filtered
+
+    def _add_unity_instance_parameter_to_tools(self, tools) -> None:
+        for tool in tools:
+            tool_name = getattr(tool, "name", None)
+            if not self._tool_accepts_unity_instance(tool_name):
+                continue
+
+            parameters = getattr(tool, "parameters", None)
+            if not isinstance(parameters, dict):
+                continue
+
+            properties = parameters.setdefault("properties", {})
+            if not isinstance(properties, dict):
+                continue
+
+            properties.setdefault("unity_instance", dict(UNITY_INSTANCE_PARAMETER_SCHEMA))
+            required = parameters.get("required")
+            if isinstance(required, list) and "unity_instance" in required:
+                required.remove("unity_instance")
+
+    def _tool_accepts_unity_instance(self, tool_name: str | None) -> bool:
+        if not isinstance(tool_name, str) or not tool_name:
+            return False
+        if tool_name in self._server_only_tool_names:
+            return tool_name in INSTANCE_ROUTED_SERVER_TOOLS
+        return (
+            tool_name in self._unity_managed_tool_names
+            or tool_name in self._tool_alias_to_unity_target
+        )
 
     def _should_filter_tool_listing(self) -> bool:
         transport = (config.transport_mode or "stdio").lower()

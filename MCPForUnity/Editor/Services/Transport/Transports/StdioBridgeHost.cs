@@ -412,7 +412,7 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
                 {
                     dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".unity-mcp");
                 }
-                string statusFile = Path.Combine(dir, $"unity-mcp-status-{ComputeProjectHash(Application.dataPath)}.json");
+                string statusFile = Path.Combine(dir, $"unity-mcp-status-{ProjectIdentityUtility.ComputeProjectPathHash(Application.dataPath)}.json");
                 if (File.Exists(statusFile))
                 {
                     File.Delete(statusFile);
@@ -1025,7 +1025,7 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
                     dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".unity-mcp");
                 }
                 Directory.CreateDirectory(dir);
-                string filePath = Path.Combine(dir, $"unity-mcp-status-{ComputeProjectHash(Application.dataPath)}.json");
+                string filePath = Path.Combine(dir, $"unity-mcp-status-{ProjectIdentityUtility.ComputeProjectPathHash(Application.dataPath)}.json");
 
                 string projectName = "Unknown";
                 try
@@ -1065,24 +1065,5 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
             }
         }
 
-        private static string ComputeProjectHash(string input)
-        {
-            try
-            {
-                using var sha1 = System.Security.Cryptography.SHA1.Create();
-                byte[] bytes = System.Text.Encoding.UTF8.GetBytes(input ?? string.Empty);
-                byte[] hashBytes = sha1.ComputeHash(bytes);
-                var sb = new System.Text.StringBuilder();
-                foreach (byte b in hashBytes)
-                {
-                    sb.Append(b.ToString("x2"));
-                }
-                return sb.ToString()[..8];
-            }
-            catch
-            {
-                return "default";
-            }
-        }
     }
 }

@@ -304,9 +304,10 @@ This server provides tools to interact with the Unity Game Engine Editor.
 {custom_tools_note}
 
 Targeting Unity instances:
-- Use the resource mcpforunity://instances to list active Unity sessions (Name@hash).
-- When multiple instances are connected, call set_active_instance with the exact Name@hash before using tools/resources to pin routing for the whole session. The server will error if multiple are connected and no active instance is set.
-- Alternatively, pass unity_instance as a parameter on any individual tool call to route just that call (e.g. unity_instance="MyGame@abc123", unity_instance="abc" for a hash prefix, or unity_instance="6401" for a port number in stdio mode). This does not change the session default.
+- Before using Unity tools/resources for a known project, compute that project's normalized absolute-path hash with the Unity MCP skill.
+- Pass unity_instance="<hash>" on each Unity tool call. For resources, append ?unity_instance=<hash> to the resource URI.
+- Do not use mcpforunity://instances for the normal targeting flow. Use it only as a diagnostic fallback when computed-hash routing fails.
+- set_active_instance(instance="<hash>") is only a compatibility fallback for clients or resource reads that cannot carry per-call routing.
 
 Important Workflows:
 
@@ -654,7 +655,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Environment Variables:
-  UNITY_MCP_DEFAULT_INSTANCE   Default Unity instance to target (project name, hash, or 'Name@hash')
+  UNITY_MCP_DEFAULT_INSTANCE   Default Unity instance to target (computed project hash)
   UNITY_MCP_SKIP_STARTUP_CONNECT   Skip initial Unity connection attempt (set to 1/true/yes/on)
   UNITY_MCP_TELEMETRY_ENABLED   Enable telemetry (set to 1/true/yes/on)
   UNITY_MCP_TRANSPORT   Transport protocol: stdio or http (default: stdio)
@@ -663,8 +664,8 @@ Environment Variables:
   UNITY_MCP_HTTP_PORT   HTTP server port (overrides URL port)
 
 Examples:
-  # Use specific Unity project as default
-  python -m src.server --default-instance "MyProject"
+  # Use specific Unity project hash as default
+  python -m src.server --default-instance "<hash>"
 
   # Start with HTTP transport
   python -m src.server --transport http --http-url http://127.0.0.1:8080
@@ -680,7 +681,7 @@ Examples:
         "--default-instance",
         type=str,
         metavar="INSTANCE",
-        help="Default Unity instance to target (project name, hash, or 'Name@hash'). "
+        help="Default Unity instance to target (computed project hash). "
              "Overrides UNITY_MCP_DEFAULT_INSTANCE environment variable."
     )
     parser.add_argument(

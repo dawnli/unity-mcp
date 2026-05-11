@@ -76,11 +76,11 @@ class InstanceSelectionRequiredError(RuntimeError):
 
     _SELECTION_REQUIRED = (
         "Unity instance selection is required. "
-        "Call set_active_instance with Name@hash from mcpforunity://instances."
+        "Compute the project hash from the absolute Unity project path and pass unity_instance on the call."
     )
     _MULTIPLE_INSTANCES = (
         "Multiple Unity instances are connected. "
-        "Call set_active_instance with Name@hash from mcpforunity://instances."
+        "Compute the target project hash and pass unity_instance on each Unity tool or resource call."
     )
 
     def __init__(self, message: str | None = None):

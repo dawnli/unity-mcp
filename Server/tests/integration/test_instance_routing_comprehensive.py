@@ -235,7 +235,7 @@ class TestInstanceRoutingHTTP:
             lambda: middleware,
         )
 
-        result = await set_active_instance_tool(ctx, "UnityMCPTests@cc8756d4")
+        result = await set_active_instance_tool(ctx, "cc8756d4")
 
         assert result["success"] is True
         assert await middleware.get_active_instance(ctx) == "UnityMCPTests@cc8756d4"
@@ -289,7 +289,7 @@ class TestInstanceRoutingHTTP:
         result = await set_active_instance_tool(ctx, "abc")
 
         assert result["success"] is False
-        assert "Name@hash" in result["error"]
+        assert "full computed project hash" in result["error"]
 
 
 class TestInstanceRoutingRaceConditions:

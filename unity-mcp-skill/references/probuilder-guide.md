@@ -4,7 +4,7 @@ Patterns and best practices for AI-driven ProBuilder mesh editing through MCP fo
 
 ## Availability
 
-ProBuilder is an **optional** Unity package (`com.unity.probuilder`). Check `mcpforunity://project/info` or call `manage_probuilder(action="ping")` to verify it's installed before using any ProBuilder tools. If available, **prefer ProBuilder over primitive GameObjects** for any geometry that needs editing, multi-material faces, or non-trivial shapes.
+ProBuilder is an **optional** Unity package (`com.unity.probuilder`). Check `mcpforunity://project/info?unity_instance=PROJECT_HASH` or call `manage_probuilder(action="ping", unity_instance=PROJECT_HASH)` to verify it's installed before using any ProBuilder tools. If available, **prefer ProBuilder over primitive GameObjects** for any geometry that needs editing, multi-material faces, or non-trivial shapes.
 
 ## Core Workflow: Always Get Info First
 
@@ -13,6 +13,7 @@ Before any mesh edit, call `get_mesh_info` with `include='faces'` to understand 
 ```python
 # Step 1: Get face info with directions
 result = manage_probuilder(action="get_mesh_info", target="MyCube",
+    unity_instance=PROJECT_HASH,
     properties={"include": "faces"})
 
 # Response includes per-face:
@@ -24,6 +25,7 @@ result = manage_probuilder(action="get_mesh_info", target="MyCube",
 # Step 2: Use the direction labels to pick faces
 # Want to extrude the top? Find the face with direction="top"
 manage_probuilder(action="extrude_faces", target="MyCube",
+    unity_instance=PROJECT_HASH,
     properties={"faceIndices": [0], "distance": 1.5})
 ```
 
@@ -42,40 +44,40 @@ manage_probuilder(action="extrude_faces", target="MyCube",
 
 ```python
 # Basic shapes
-manage_probuilder(action="create_shape", properties={"shape_type": "Cube", "name": "MyCube"})
-manage_probuilder(action="create_shape", properties={"shape_type": "Sphere", "name": "MySphere"})
-manage_probuilder(action="create_shape", properties={"shape_type": "Cylinder", "name": "MyCyl"})
-manage_probuilder(action="create_shape", properties={"shape_type": "Plane", "name": "MyPlane"})
-manage_probuilder(action="create_shape", properties={"shape_type": "Cone", "name": "MyCone"})
-manage_probuilder(action="create_shape", properties={"shape_type": "Prism", "name": "MyPrism"})
+manage_probuilder(action="create_shape", properties={"shape_type": "Cube", "name": "MyCube"}, unity_instance=PROJECT_HASH)
+manage_probuilder(action="create_shape", properties={"shape_type": "Sphere", "name": "MySphere"}, unity_instance=PROJECT_HASH)
+manage_probuilder(action="create_shape", properties={"shape_type": "Cylinder", "name": "MyCyl"}, unity_instance=PROJECT_HASH)
+manage_probuilder(action="create_shape", properties={"shape_type": "Plane", "name": "MyPlane"}, unity_instance=PROJECT_HASH)
+manage_probuilder(action="create_shape", properties={"shape_type": "Cone", "name": "MyCone"}, unity_instance=PROJECT_HASH)
+manage_probuilder(action="create_shape", properties={"shape_type": "Prism", "name": "MyPrism"}, unity_instance=PROJECT_HASH)
 
 # Parametric shapes
-manage_probuilder(action="create_shape", properties={
+manage_probuilder(action="create_shape", unity_instance=PROJECT_HASH, properties={
     "shape_type": "Torus", "name": "MyTorus",
     "rows": 16, "columns": 24, "innerRadius": 0.5, "outerRadius": 1.0
 })
-manage_probuilder(action="create_shape", properties={
+manage_probuilder(action="create_shape", unity_instance=PROJECT_HASH, properties={
     "shape_type": "Pipe", "name": "MyPipe",
     "radius": 1.0, "height": 2.0, "thickness": 0.2
 })
-manage_probuilder(action="create_shape", properties={
+manage_probuilder(action="create_shape", unity_instance=PROJECT_HASH, properties={
     "shape_type": "Arch", "name": "MyArch",
     "radius": 2.0, "angle": 180, "segments": 12
 })
 
 # Architectural shapes
-manage_probuilder(action="create_shape", properties={
+manage_probuilder(action="create_shape", unity_instance=PROJECT_HASH, properties={
     "shape_type": "Stair", "name": "MyStairs", "steps": 10
 })
-manage_probuilder(action="create_shape", properties={
+manage_probuilder(action="create_shape", unity_instance=PROJECT_HASH, properties={
     "shape_type": "CurvedStair", "name": "Spiral", "steps": 12
 })
-manage_probuilder(action="create_shape", properties={
+manage_probuilder(action="create_shape", unity_instance=PROJECT_HASH, properties={
     "shape_type": "Door", "name": "MyDoor"
 })
 
 # Custom polygon
-manage_probuilder(action="create_poly_shape", properties={
+manage_probuilder(action="create_poly_shape", unity_instance=PROJECT_HASH, properties={
     "points": [[0,0,0], [5,0,0], [5,0,5], [2.5,0,7], [0,0,5]],
     "extrudeHeight": 3.0, "name": "Pentagon"
 })
@@ -87,17 +89,19 @@ manage_probuilder(action="create_poly_shape", properties={
 
 ```python
 # 1. Create a building base
-manage_probuilder(action="create_shape", properties={
+manage_probuilder(action="create_shape", unity_instance=PROJECT_HASH, properties={
     "shape_type": "Cube", "name": "Building", "size": [4, 3, 6]
 })
 
 # 2. Find the top face
 info = manage_probuilder(action="get_mesh_info", target="Building",
+    unity_instance=PROJECT_HASH,
     properties={"include": "faces"})
 # Find face with direction="top" -> e.g. index 2
 
 # 3. Extrude upward for a flat roof extension
 manage_probuilder(action="extrude_faces", target="Building",
+    unity_instance=PROJECT_HASH,
     properties={"faceIndices": [2], "distance": 0.5})
 ```
 
@@ -106,19 +110,23 @@ manage_probuilder(action="extrude_faces", target="Building",
 ```python
 # 1. Get face info
 info = manage_probuilder(action="get_mesh_info", target="Wall",
+    unity_instance=PROJECT_HASH,
     properties={"include": "faces"})
 # Find the face with direction="front" -> e.g. index 4
 
 # 2. Subdivide to create more faces
 manage_probuilder(action="subdivide", target="Wall",
+    unity_instance=PROJECT_HASH,
     properties={"faceIndices": [4]})
 
 # 3. Get updated face info (indices changed after subdivide!)
 info = manage_probuilder(action="get_mesh_info", target="Wall",
+    unity_instance=PROJECT_HASH,
     properties={"include": "faces"})
 
 # 4. Delete the center face(s) for the hole
 manage_probuilder(action="delete_faces", target="Wall",
+    unity_instance=PROJECT_HASH,
     properties={"faceIndices": [6]})
 ```
 
@@ -127,10 +135,12 @@ manage_probuilder(action="delete_faces", target="Wall",
 ```python
 # Get edge info
 info = manage_probuilder(action="get_mesh_info", target="MyCube",
+    unity_instance=PROJECT_HASH,
     properties={"include": "edges"})
 
 # Bevel specific edges
 manage_probuilder(action="bevel_edges", target="MyCube",
+    unity_instance=PROJECT_HASH,
     properties={"edgeIndices": [0, 1, 2, 3], "amount": 0.1})
 ```
 
@@ -139,10 +149,12 @@ manage_probuilder(action="bevel_edges", target="MyCube",
 ```python
 # Detach and keep original (default)
 manage_probuilder(action="detach_faces", target="MyCube",
+    unity_instance=PROJECT_HASH,
     properties={"faceIndices": [0, 1], "deleteSourceFaces": False})
 
 # Detach and remove from source
 manage_probuilder(action="detach_faces", target="MyCube",
+    unity_instance=PROJECT_HASH,
     properties={"faceIndices": [0, 1], "deleteSourceFaces": True})
 ```
 
@@ -151,10 +163,12 @@ manage_probuilder(action="detach_faces", target="MyCube",
 ```python
 # Select all upward-facing faces
 manage_probuilder(action="select_faces", target="MyMesh",
+    unity_instance=PROJECT_HASH,
     properties={"direction": "up", "tolerance": 0.7})
 
 # Grow selection from a seed face
 manage_probuilder(action="select_faces", target="MyMesh",
+    unity_instance=PROJECT_HASH,
     properties={"growFrom": [0], "growAngle": 45})
 ```
 
@@ -163,6 +177,7 @@ manage_probuilder(action="select_faces", target="MyMesh",
 ```python
 # Create inside faces for a room (duplicate and flip normals)
 manage_probuilder(action="duplicate_and_flip", target="Room",
+    unity_instance=PROJECT_HASH,
     properties={"faceIndices": [0, 1, 2, 3, 4, 5]})
 ```
 
@@ -171,6 +186,7 @@ manage_probuilder(action="duplicate_and_flip", target="Room",
 ```python
 # Connect existing vertices into a new face (auto-finds winding order)
 manage_probuilder(action="create_polygon", target="MyMesh",
+    unity_instance=PROJECT_HASH,
     properties={"vertexIndices": [0, 3, 7, 4]})
 ```
 
@@ -179,18 +195,22 @@ manage_probuilder(action="create_polygon", target="MyMesh",
 ```python
 # Move vertices by offset
 manage_probuilder(action="move_vertices", target="MyCube",
+    unity_instance=PROJECT_HASH,
     properties={"vertexIndices": [0, 1, 2, 3], "offset": [0, 1, 0]})
 
 # Weld nearby vertices (proximity-based merge)
 manage_probuilder(action="weld_vertices", target="MyCube",
+    unity_instance=PROJECT_HASH,
     properties={"vertexIndices": [0, 1, 2, 3], "radius": 0.1})
 
 # Insert vertex on an edge
 manage_probuilder(action="insert_vertex", target="MyCube",
+    unity_instance=PROJECT_HASH,
     properties={"edge": {"a": 0, "b": 1}, "point": [0.5, 0, 0]})
 
 # Add evenly-spaced points along edges
 manage_probuilder(action="append_vertices_to_edge", target="MyCube",
+    unity_instance=PROJECT_HASH,
     properties={"edgeIndices": [0, 1], "count": 3})
 ```
 
@@ -201,6 +221,7 @@ manage_probuilder(action="append_vertices_to_edge", target="MyCube",
 ```python
 # Apply auto-smoothing with default 30 degree threshold
 manage_probuilder(action="auto_smooth", target="MyMesh",
+    unity_instance=PROJECT_HASH,
     properties={"angleThreshold": 30})
 ```
 
@@ -213,10 +234,12 @@ manage_probuilder(action="auto_smooth", target="MyMesh",
 ```python
 # Set specific faces to smooth group 1
 manage_probuilder(action="set_smoothing", target="MyMesh",
+    unity_instance=PROJECT_HASH,
     properties={"faceIndices": [0, 1, 2], "smoothingGroup": 1})
 
 # Set other faces to hard edges (group 0)
 manage_probuilder(action="set_smoothing", target="MyMesh",
+    unity_instance=PROJECT_HASH,
     properties={"faceIndices": [3, 4, 5], "smoothingGroup": 0})
 ```
 
@@ -226,17 +249,17 @@ After editing, always clean up:
 
 ```python
 # 1. Center the pivot (important after extrusions that shift geometry)
-manage_probuilder(action="center_pivot", target="MyMesh")
+manage_probuilder(action="center_pivot", target="MyMesh", unity_instance=PROJECT_HASH)
 
 # 2. Optionally freeze transform if you moved/rotated the object
-manage_probuilder(action="freeze_transform", target="MyMesh")
+manage_probuilder(action="freeze_transform", target="MyMesh", unity_instance=PROJECT_HASH)
 
 # 3. Validate mesh health
-result = manage_probuilder(action="validate_mesh", target="MyMesh")
+result = manage_probuilder(action="validate_mesh", target="MyMesh", unity_instance=PROJECT_HASH)
 # Check result.data.healthy -- if false, repair
 
 # 4. Auto-repair if needed
-manage_probuilder(action="repair_mesh", target="MyMesh")
+manage_probuilder(action="repair_mesh", target="MyMesh", unity_instance=PROJECT_HASH)
 ```
 
 ## Building Complex Objects with ProBuilder
@@ -247,72 +270,85 @@ When ProBuilder is available, prefer it over primitive GameObjects for complex g
 
 ```python
 # 1. Create base building
-manage_probuilder(action="create_shape", properties={
+manage_probuilder(action="create_shape", unity_instance=PROJECT_HASH, properties={
     "shape_type": "Cube", "name": "House", "width": 6, "height": 3, "depth": 8
 })
 
 # 2. Get face info to find the top face
 info = manage_probuilder(action="get_mesh_info", target="House",
+    unity_instance=PROJECT_HASH,
     properties={"include": "faces"})
 # Find direction="top" -> e.g. index 2
 
 # 3. Extrude the top face to create a flat raised section
 manage_probuilder(action="extrude_faces", target="House",
+    unity_instance=PROJECT_HASH,
     properties={"faceIndices": [2], "distance": 0.3})
 
 # 4. Re-query faces, then move top vertices inward to form a ridge
 info = manage_probuilder(action="get_mesh_info", target="House",
+    unity_instance=PROJECT_HASH,
     properties={"include": "faces"})
 # Find the new top face after extrude, get its vertex indices
 # Move them to form a peaked roof shape
 manage_probuilder(action="move_vertices", target="House",
+    unity_instance=PROJECT_HASH,
     properties={"vertexIndices": [0, 1, 2, 3], "offset": [0, 2, 0]})
 
 # 5. Cut a doorway: subdivide front face, delete center sub-face
 info = manage_probuilder(action="get_mesh_info", target="House",
+    unity_instance=PROJECT_HASH,
     properties={"include": "faces"})
 # Find direction="front", subdivide it
 manage_probuilder(action="subdivide", target="House",
+    unity_instance=PROJECT_HASH,
     properties={"faceIndices": [4]})
 
 # Re-query, find bottom-center face, delete it
 info = manage_probuilder(action="get_mesh_info", target="House",
+    unity_instance=PROJECT_HASH,
     properties={"include": "faces"})
 manage_probuilder(action="delete_faces", target="House",
+    unity_instance=PROJECT_HASH,
     properties={"faceIndices": [12]})
 
 # 6. Add a door frame with arch
-manage_probuilder(action="create_shape", properties={
+manage_probuilder(action="create_shape", unity_instance=PROJECT_HASH, properties={
     "shape_type": "Door", "name": "Doorway",
     "position": [0, 0, 4], "width": 1.5, "height": 2.5
 })
 
 # 7. Add stairs to the door
-manage_probuilder(action="create_shape", properties={
+manage_probuilder(action="create_shape", unity_instance=PROJECT_HASH, properties={
     "shape_type": "Stair", "name": "FrontSteps",
     "position": [0, 0, 5], "steps": 3, "width": 2
 })
 
 # 8. Smooth organic parts, keep architectural edges sharp
 manage_probuilder(action="auto_smooth", target="House",
+    unity_instance=PROJECT_HASH,
     properties={"angleThreshold": 30})
 
 # 9. Assign materials per face
 manage_probuilder(action="set_face_material", target="House",
+    unity_instance=PROJECT_HASH,
     properties={"faceIndices": [0, 1, 2, 3], "materialPath": "Assets/Materials/Brick.mat"})
 manage_probuilder(action="set_face_material", target="House",
+    unity_instance=PROJECT_HASH,
     properties={"faceIndices": [4, 5], "materialPath": "Assets/Materials/Roof.mat"})
 
 # 10. Cleanup
-manage_probuilder(action="center_pivot", target="House")
-manage_probuilder(action="validate_mesh", target="House")
+manage_probuilder(action="center_pivot", target="House", unity_instance=PROJECT_HASH)
+manage_probuilder(action="validate_mesh", target="House", unity_instance=PROJECT_HASH)
 ```
 
 ### Example: Pillared Corridor (Batch)
 
 ```python
 # Create multiple columns efficiently
-batch_execute(commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    commands=[
     {"tool": "manage_probuilder", "params": {
         "action": "create_shape",
         "properties": {"shape_type": "Cylinder", "name": f"Pillar_{i}",
@@ -337,14 +373,17 @@ batch_execute(commands=[
 # Bevel all pillar tops for decoration
 for i in range(6):
     info = manage_probuilder(action="get_mesh_info", target=f"Pillar_{i}",
+        unity_instance=PROJECT_HASH,
         properties={"include": "edges"})
     # Find top ring edges, bevel them
     manage_probuilder(action="bevel_edges", target=f"Pillar_{i}",
+        unity_instance=PROJECT_HASH,
         properties={"edgeIndices": [0, 1, 2, 3], "amount": 0.05})
 
 # Smooth the pillars
 for i in range(6):
     manage_probuilder(action="auto_smooth", target=f"Pillar_{i}",
+        unity_instance=PROJECT_HASH,
         properties={"angleThreshold": 45})
 ```
 
@@ -352,7 +391,7 @@ for i in range(6):
 
 ```python
 # Use polygon shape for non-rectangular footprint
-manage_probuilder(action="create_poly_shape", properties={
+manage_probuilder(action="create_poly_shape", unity_instance=PROJECT_HASH, properties={
     "points": [
         [0, 0, 0], [10, 0, 0], [10, 0, 6],
         [4, 0, 6], [4, 0, 10], [0, 0, 10]
@@ -363,10 +402,12 @@ manage_probuilder(action="create_poly_shape", properties={
 
 # Create inside faces for the room interior
 info = manage_probuilder(action="get_mesh_info", target="LRoom",
+    unity_instance=PROJECT_HASH,
     properties={"include": "faces"})
 # Duplicate and flip all faces to make interior visible
 all_faces = list(range(info["data"]["faceCount"]))
 manage_probuilder(action="duplicate_and_flip", target="LRoom",
+    unity_instance=PROJECT_HASH,
     properties={"faceIndices": all_faces})
 
 # Cut a window: subdivide a wall face, delete center
@@ -377,7 +418,7 @@ manage_probuilder(action="duplicate_and_flip", target="LRoom",
 
 ```python
 # Create a torus
-manage_probuilder(action="create_shape", properties={
+manage_probuilder(action="create_shape", unity_instance=PROJECT_HASH, properties={
     "shape_type": "Torus", "name": "Ring",
     "innerRadius": 0.3, "outerRadius": 2.0,
     "rows": 24, "columns": 32
@@ -385,10 +426,12 @@ manage_probuilder(action="create_shape", properties={
 
 # Smooth it for organic look
 manage_probuilder(action="auto_smooth", target="Ring",
+    unity_instance=PROJECT_HASH,
     properties={"angleThreshold": 60})
 
 # Assign metallic material
 manage_probuilder(action="set_face_material", target="Ring",
+    unity_instance=PROJECT_HASH,
     properties={"faceIndices": [], "materialPath": "Assets/Materials/Gold.mat"})
 # Note: empty faceIndices = all faces
 ```
@@ -398,7 +441,9 @@ manage_probuilder(action="set_face_material", target="Ring",
 Use `batch_execute` for multi-step workflows to reduce round-trips:
 
 ```python
-batch_execute(commands=[
+batch_execute(
+    unity_instance=PROJECT_HASH,
+    commands=[
     {"tool": "manage_probuilder", "params": {
         "action": "create_shape",
         "properties": {"shape_type": "Cube", "name": "Column1", "position": [0, 0, 0]}
@@ -441,4 +486,4 @@ These actions exist in the API but have known bugs that prevent them from workin
 5. **Auto-smooth for organic shapes** -- 30 degrees is a good default
 6. **Prefer ProBuilder over primitives** -- when the package is available and you need editable geometry
 7. **Use batch_execute** -- for creating multiple shapes or repetitive operations
-8. **Screenshot to verify** -- use `manage_camera(action="screenshot", include_image=True)` to check visual results after complex edits
+8. **Screenshot to verify** -- use `manage_camera(action="screenshot", include_image=True, unity_instance=PROJECT_HASH)` to check visual results after complex edits

@@ -52,7 +52,7 @@ unity-mcp editor add-tag "TagName"         # Add tag
 unity-mcp editor add-layer "LayerName"     # Add layer
 unity-mcp editor tests --mode PlayMode [--async]
 unity-mcp editor poll-test <job_id> [--wait 60] [--details]
-unity-mcp --instance "MyProject@abc123" editor play  # Target a specific instance
+unity-mcp --instance "<hash>" editor play  # Target a specific instance
 ```
 
 **Custom Tools**
@@ -242,5 +242,5 @@ unity-mcp raw manage_packages '{"action":"list_packages"}'
 
 The MCP HTTP server still needs to be running for CLI to work. Here is an example to run the server manually on Mac:
 ```bash
-/opt/homebrew/bin/uvx --no-cache --refresh --from /XXX/unity-mcp/Server mcp-for-unity --transport http --http-url http://localhost:8080
+/opt/homebrew/bin/uvx --no-cache --refresh --from /XXX/unity-mcp/Server mcp-for-unity --transport http --http-url http://127.0.0.1:8080
 ```

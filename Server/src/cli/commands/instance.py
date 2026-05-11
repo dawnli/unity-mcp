@@ -40,7 +40,7 @@ def list_instances():
         hash_id = inst.get("hash", "")
         session_id = inst.get("session_id", "")
 
-        # Format: ProjectName@hash (Unity version)
+        # Display format: ProjectName@hash (Unity version)
         display_id = f"{project}@{hash_id}" if hash_id else project
         click.echo(f"  • {display_id} (Unity {version})")
         if session_id:
@@ -53,11 +53,11 @@ def list_instances():
 def set_instance(instance_id: str):
     """Set the active Unity instance.
 
-    INSTANCE_ID can be Name@hash or just a hash prefix.
+    INSTANCE_ID should be the computed project hash or a unique hash prefix.
 
     \\b
     Examples:
-        unity-mcp instance set "MyProject@abc123"
+        unity-mcp instance set "<hash>"
         unity-mcp instance set abc123
     """
     config = get_config()
@@ -88,6 +88,7 @@ def current_instance():
         click.echo(f"Configured instance: {config.unity_instance}")
     else:
         print_info(
-            "No instance explicitly set. Using default (auto-select single instance).")
+            "No instance explicitly set. The server may auto-select a single instance for compatibility.")
+        print_info("AI clients should explicitly set the computed project hash.")
         print_info("Use 'unity-mcp instance list' to see available instances.")
         print_info("Use 'unity-mcp instance set <id>' to select one.")

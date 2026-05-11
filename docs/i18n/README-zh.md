@@ -78,7 +78,7 @@ openupm add com.coplaydev.unity-mcp
 ### 2. 启动服务器并连接
 
 1. 在 Unity 中：`Window > MCP for Unity`
-2. 点击 **Start Server**（会在 `localhost:8080` 启动 HTTP 服务器）
+2. 点击 **Start Server**（会在 `127.0.0.1:8080` 启动 HTTP 服务器）
 3. 从下拉菜单选择你的 MCP Client，然后点击 **Configure**
 4. 查找 🟢 "Connected ✓"
 5. **连接你的客户端：** 一些客户端（Cursor、Antigravity、OpenClaw）需要在设置里启用 MCP 开关或插件。OpenClaw 还需要启用 `openclaw-mcp-bridge` 插件，并会跟随 MCP for Unity 当前选择的传输方式（HTTP 或 stdio）；另一些（Claude Desktop、Claude Code）在配置后会自动连接。
@@ -115,7 +115,7 @@ openupm add com.coplaydev.unity-mcp
 {
   "mcpServers": {
     "unityMCP": {
-      "url": "http://localhost:8080/mcp"
+      "url": "http://127.0.0.1:8080/mcp"
     }
   }
 }
@@ -127,7 +127,7 @@ openupm add com.coplaydev.unity-mcp
   "servers": {
     "unityMCP": {
       "type": "http",
-      "url": "http://localhost:8080/mcp"
+      "url": "http://127.0.0.1:8080/mcp"
     }
   }
 }
@@ -165,11 +165,25 @@ openupm add com.coplaydev.unity-mcp
 <details>
 <summary><strong>多个 Unity 实例</strong></summary>
 
-MCP for Unity 支持多个 Unity Editor 实例。要将操作定向到某个特定实例：
+MCP for Unity 通过同一个 MCP server URL 支持多个 Unity Editor 实例。MCP client 应继续使用固定本地 URL `http://127.0.0.1:8080/mcp`，不需要项目专属 URL。
 
-1. 让你的大语言模型检查 `unity_instances` 资源
-2. 使用 `set_active_instance` 并传入 `Name@hash`（例如 `MyProject@abc123`）
-3. 后续所有工具都会路由到该实例
+每个 Unity 项目由确定性的 project hash 标识。hash 输入是 Unity 项目根目录绝对路径，按以下规则归一化：
+
+1. 将 `\` 转为 `/`
+2. 将英文字母转为小写
+3. 去掉路径结尾的 `/`
+4. 如果传入的是 Assets 路径，去掉结尾的 `/Assets`
+5. 对归一化后的项目根路径做 SHA-256，并取前 24 个十六进制字符
+
+正常 AI 定向流程：
+
+1. 用 `unity-mcp-skill/scripts/project_path_hash.py` 从目标 Unity 项目绝对路径计算 project hash。
+2. 每次 Unity-managed tool 调用都传入 `unity_instance="<hash>"`。
+3. 读取 resource 时，在 URI 后追加 `?unity_instance=<hash>`。
+
+`set_active_instance(instance="<hash>")` 仍保留为兼容 fallback，用于无法逐次携带 `unity_instance` 的 client 或 resource。不要用 `unity_instances` 资源做正常定向；只有按计算出的 hash 路由失败时才把它作为诊断 fallback。
+
+手工验证用例见 [`docs/guides/MULTI_CLIENT_ROUTING_TESTS.md`](../guides/MULTI_CLIENT_ROUTING_TESTS.md)。
 </details>
 
 <details>

@@ -69,12 +69,13 @@ class TestMiddlewareAuthEnforcement:
 class TestMiddlewareSessionKey:
     @pytest.mark.asyncio
     async def test_get_session_key_uses_user_id_fallback(self):
-        """When no client_id, middleware should use user:$user_id as session key."""
+        """When no session/client id, middleware should use user:$user_id."""
         from transport.unity_instance_middleware import UnityInstanceMiddleware
 
         middleware = UnityInstanceMiddleware()
 
         ctx = DummyContext()
+        ctx.session_id = None
         # Simulate no client_id attribute
         if hasattr(ctx, "client_id"):
             delattr(ctx, "client_id")
@@ -85,17 +86,33 @@ class TestMiddlewareSessionKey:
 
     @pytest.mark.asyncio
     async def test_get_session_key_prefers_client_id(self):
-        """client_id should take precedence over user_id."""
+        """client_id should be used when session_id is unavailable."""
         from transport.unity_instance_middleware import UnityInstanceMiddleware
 
         middleware = UnityInstanceMiddleware()
 
         ctx = DummyContext()
+        ctx.session_id = None
         ctx.client_id = "client-abc"
         await ctx.set_state("user_id", "user-77")
 
         key = await middleware.get_session_key(ctx)
         assert key == "client-abc"
+
+    @pytest.mark.asyncio
+    async def test_get_session_key_prefers_session_id(self):
+        """HTTP mcp-session-id should isolate compatibility active state."""
+        from transport.unity_instance_middleware import UnityInstanceMiddleware
+
+        middleware = UnityInstanceMiddleware()
+
+        ctx = DummyContext()
+        ctx.session_id = "session-abc"
+        ctx.client_id = "client-abc"
+        await ctx.set_state("user_id", "user-77")
+
+        key = await middleware.get_session_key(ctx)
+        assert key == "session-abc"
 
 
 class TestAutoSelectDisabledRemoteHosted:
