@@ -27,10 +27,6 @@
                     <ui:Button name="clear-api-key-button" text="Clear" class="action-button" />
                 </ui:VisualElement>
             </ui:VisualElement>
-            <ui:VisualElement class="setting-row" name="http-server-control-row">
-                <ui:Label text="Local Server:" class="setting-label" />
-                <ui:Button name="start-http-server-button" text="Start Server" class="action-button start-server-button" />
-            </ui:VisualElement>
             <ui:VisualElement class="setting-row" name="unity-socket-port-row">
                 <ui:Label text="Unity Socket Port:" class="setting-label" />
                 <ui:TextField name="unity-port" class="port-field" />
@@ -42,16 +38,6 @@
                 </ui:VisualElement>
                 <ui:Button name="connection-toggle" text="Start" class="action-button" />
             </ui:VisualElement>
-            <ui:Foldout name="manual-command-foldout" text="Manual Server Launch" value="false" class="manual-config-foldout">
-                <ui:VisualElement name="http-server-command-section" class="manual-config-content">
-                    <ui:Label text="Use this command to launch the server manually:" class="config-label" />
-                    <ui:VisualElement class="config-json-row">
-                        <ui:TextField name="http-server-command" readonly="true" multiline="true" class="config-json-field" />
-                        <ui:Button name="copy-http-server-command-button" text="Copy" class="icon-button-vertical" />
-                    </ui:VisualElement>
-                    <ui:Label name="http-server-command-hint" class="help-text" />
-                </ui:VisualElement>
-            </ui:Foldout>
         </ui:VisualElement>
     </ui:VisualElement>
 </ui:UXML>

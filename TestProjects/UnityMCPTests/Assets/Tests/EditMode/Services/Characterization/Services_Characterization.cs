@@ -108,29 +108,28 @@ namespace MCPForUnityTests.Editor.Services.Characterization
         }
 
         /// <summary>
-        /// Current behavior: TryGetLocalHttpServerCommand builds uvx command
-        /// with platform-specific arguments.
+        /// Current behavior: Unity does not expose local HTTP server launch commands.
         /// </summary>
         [Test]
-        public void ServerManagementService_TryGetLocalHttpServerCommand_BuildsUvxCommand()
+        public void ServerManagementService_TryGetLocalHttpServerCommand_ReturnsFalse()
         {
             var service = new ServerManagementService();
 
-            string command = null;
-            string error = null;
-            bool result = service.TryGetLocalHttpServerCommand(out command, out error);
+            bool result = service.TryGetLocalHttpServerCommand(out string command, out string error);
 
-            // Command building should succeed (unless misconfigured)
-            if (result)
-            {
-                Assert.IsNotNull(command, "Command should be set on success");
-                // Document the command structure
-                Assert.Pass($"Built command: {command}");
-            }
-            else
-            {
-                Assert.Pass($"TryGetLocalHttpServerCommand returned false: {error ?? "unknown"}");
-            }
+            Assert.IsFalse(result, "Unity must not expose commands for externally managed HTTP Local servers");
+            Assert.IsNull(command);
+            Assert.That(error, Does.Contain("external launcher").IgnoreCase);
+        }
+
+        [Test]
+        public void ServerManagementService_StartLocalHttpServer_DoesNotLaunchFromUnity()
+        {
+            var service = new ServerManagementService();
+
+            bool result = service.StartLocalHttpServer(quiet: true);
+
+            Assert.IsFalse(result, "Unity must not launch externally managed HTTP Local servers");
         }
 
         /// <summary>
@@ -187,23 +186,21 @@ namespace MCPForUnityTests.Editor.Services.Characterization
         }
 
         /// <summary>
-        /// Current behavior: StopLocalHttpServer prefers pidfile-based approach
-        /// for deterministic termination.
+        /// Current behavior: StopLocalHttpServer is disabled because HTTP Local
+        /// server lifecycle is owned by the external launcher.
         /// </summary>
         [Test]
-        [Explicit("Stops the MCP server - kills connection")]
-        public void ServerManagementService_StopLocalHttpServer_PrefersPidfileBasedApproach()
+        public void ServerManagementService_StopLocalHttpServer_DoesNotStopExternalServer()
         {
             var service = new ServerManagementService();
 
-            // WARNING: This test calls StopLocalHttpServer() which will kill the running MCP server
-            // Calling stop when no server is running should not throw
+            bool result = true;
             Assert.DoesNotThrow(() =>
             {
-                service.StopLocalHttpServer();
-            }, "StopLocalHttpServer should handle no-server case gracefully");
+                result = service.StopLocalHttpServer();
+            }, "StopLocalHttpServer should not throw when lifecycle is external");
 
-            Assert.Pass("StopLocalHttpServer uses pidfile-based approach with fallbacks");
+            Assert.IsFalse(result, "Unity must not stop externally managed HTTP Local servers");
         }
 
         /// <summary>

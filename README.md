@@ -76,13 +76,14 @@ openupm add com.coplaydev.unity-mcp
 ```
 </details>
 
-### 2. Start the Server & Connect
+### 2. Start the Project Server & Connect
 
-1. In Unity: `Window > MCP for Unity`
-2. Click **Start Server** (launches HTTP server on `127.0.0.1:8080`)
-3. Select your MCP Client from the dropdown and click **Configure**
-4. Look for 🟢 "Connected ✓"
-5. **Connect your client:** Some clients (Cursor, Antigravity, OpenClaw) require enabling an MCP toggle or plugin in settings. OpenClaw also needs the `openclaw-mcp-bridge` plugin enabled and follows the currently selected MCP for Unity transport (`HTTP` or `stdio`). Others (Claude Desktop, Claude Code) auto-connect after configuration.
+1. Start the MCP server externally with your project launcher.
+2. In Unity: `Window > MCP for Unity`
+3. Set the HTTP URL if needed. If the server is reachable, Unity automatically starts the session. If not, the window shows "Server Not Started"; use **Start Session** after the external server is running.
+4. Select your MCP Client from the dropdown and click **Configure**
+5. Look for 🟢 "Connected ✓"
+6. **Connect your client:** Some clients (Cursor, Antigravity, OpenClaw) require enabling an MCP toggle or plugin in settings. OpenClaw also needs the `openclaw-mcp-bridge` plugin enabled and follows the currently selected MCP for Unity transport (`HTTP` or `stdio`). Others (Claude Desktop, Claude Code) auto-connect after configuration.
 
 **That's it!** Try a prompt like: *"Create a red, blue and yellow cube"* or *"Build a simple player controller"*
 

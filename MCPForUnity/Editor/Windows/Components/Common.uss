@@ -208,12 +208,7 @@
     background-color: rgba(30, 120, 200, 1);
 }
 
-/* Start Server button in the manual config section should align flush left like other full-width controls */
-.start-server-button {
-    margin-left: 0px;
-}
-
-/* When the HTTP server/session is running, we show the Start/Stop button as "danger" (red) */
+/* When a session is running, the End Session button is shown as "danger" (red) */
 .action-button.server-running {
     background-color: rgba(200, 50, 50, 0.85);
 }

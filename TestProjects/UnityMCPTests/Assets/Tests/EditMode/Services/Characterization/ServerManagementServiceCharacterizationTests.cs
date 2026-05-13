@@ -212,7 +212,7 @@ namespace MCPForUnityTests.Editor.Services.Characterization
         }
 
         [Test]
-        public void CanStartLocalServer_HttpEnabledLocalUrl_ReturnsTrue()
+        public void CanStartLocalServer_HttpEnabledLocalUrl_ReturnsFalse()
         {
             // Arrange
             EditorPrefs.SetBool(EditorPrefKeys.UseHttpTransport, true);
@@ -224,7 +224,7 @@ namespace MCPForUnityTests.Editor.Services.Characterization
             bool result = _service.CanStartLocalServer();
 
             // Assert
-            Assert.IsTrue(result, "Can start local server when HTTP enabled and URL is local");
+            Assert.IsFalse(result, "Unity cannot start externally managed local servers");
         }
 
         [Test]
@@ -261,7 +261,7 @@ namespace MCPForUnityTests.Editor.Services.Characterization
         }
 
         [Test]
-        public void CanStartLocalServer_HttpEnabledZeroBind_WithOptIn_ReturnsTrue()
+        public void CanStartLocalServer_HttpEnabledZeroBind_WithOptIn_ReturnsFalse()
         {
             // Arrange
             EditorPrefs.SetBool(EditorPrefKeys.UseHttpTransport, true);
@@ -274,7 +274,7 @@ namespace MCPForUnityTests.Editor.Services.Characterization
             bool result = _service.CanStartLocalServer();
 
             // Assert
-            Assert.IsTrue(result, "Can start local server on 0.0.0.0 when LAN bind opt-in is enabled");
+            Assert.IsFalse(result, "Unity cannot start externally managed local servers even when LAN bind is allowed");
         }
 
         #endregion
@@ -373,7 +373,7 @@ namespace MCPForUnityTests.Editor.Services.Characterization
             Assert.IsFalse(result, "Should return false when HTTP transport is disabled");
             Assert.IsNull(command, "Command should be null when failing");
             Assert.IsNotNull(error, "Error message should be provided");
-            Assert.That(error, Does.Contain("HTTP").IgnoreCase, "Error should mention HTTP transport");
+            Assert.That(error, Does.Contain("external launcher").IgnoreCase, "Error should mention external lifecycle ownership");
         }
 
         [Test]
@@ -392,11 +392,11 @@ namespace MCPForUnityTests.Editor.Services.Characterization
             Assert.IsFalse(result, "Should return false for remote URL");
             Assert.IsNull(command, "Command should be null when failing");
             Assert.IsNotNull(error, "Error message should be provided");
-            Assert.That(error, Does.Contain("local").IgnoreCase, "Error should mention local address requirement");
+            Assert.That(error, Does.Contain("external launcher").IgnoreCase, "Error should mention external lifecycle ownership");
         }
 
         [Test]
-        public void TryGetLocalHttpServerCommand_LocalUrl_ReturnsCommandOrError()
+        public void TryGetLocalHttpServerCommand_LocalUrl_ReturnsFalse()
         {
             // Arrange
             EditorPrefs.SetBool(EditorPrefKeys.UseHttpTransport, true);
@@ -406,19 +406,9 @@ namespace MCPForUnityTests.Editor.Services.Characterization
             // Act
             bool result = _service.TryGetLocalHttpServerCommand(out string command, out string error);
 
-            // Assert - Success depends on uvx availability
-            if (result)
-            {
-                Assert.IsNotNull(command, "Command should be set on success");
-                Assert.IsNull(error, "Error should be null on success");
-                Assert.That(command, Does.Contain("uvx").Or.Contain("uv"), "Command should reference uvx/uv");
-            }
-            else
-            {
-                Assert.IsNotNull(error, "Error message should be provided on failure");
-            }
-
-            Assert.Pass($"TryGetLocalHttpServerCommand: success={result}, command={command ?? "null"}, error={error ?? "null"}");
+            Assert.IsFalse(result, "Unity must not expose local HTTP server launch commands");
+            Assert.IsNull(command, "Command should stay null when lifecycle is external");
+            Assert.That(error, Does.Contain("external launcher").IgnoreCase);
         }
 
         #endregion

@@ -75,13 +75,14 @@ openupm add com.coplaydev.unity-mcp
 ```
 </details>
 
-### 2. 启动服务器并连接
+### 2. 启动项目服务器并连接
 
-1. 在 Unity 中：`Window > MCP for Unity`
-2. 点击 **Start Server**（会在 `127.0.0.1:8080` 启动 HTTP 服务器）
-3. 从下拉菜单选择你的 MCP Client，然后点击 **Configure**
-4. 查找 🟢 "Connected ✓"
-5. **连接你的客户端：** 一些客户端（Cursor、Antigravity、OpenClaw）需要在设置里启用 MCP 开关或插件。OpenClaw 还需要启用 `openclaw-mcp-bridge` 插件，并会跟随 MCP for Unity 当前选择的传输方式（HTTP 或 stdio）；另一些（Claude Desktop、Claude Code）在配置后会自动连接。
+1. 通过项目外部启动器启动 MCP server。
+2. 在 Unity 中：`Window > MCP for Unity`
+3. 如有需要，设置 HTTP URL。如果 server 可达，Unity 会自动启动 session。如果不可达，窗口会显示 "Server Not Started"；等外部 server 运行后再点击 **Start Session**。
+4. 从下拉菜单选择你的 MCP Client，然后点击 **Configure**
+5. 查找 🟢 "Connected ✓"
+6. **连接你的客户端：** 一些客户端（Cursor、Antigravity、OpenClaw）需要在设置里启用 MCP 开关或插件。OpenClaw 还需要启用 `openclaw-mcp-bridge` 插件，并会跟随 MCP for Unity 当前选择的传输方式（HTTP 或 stdio）；另一些（Claude Desktop、Claude Code）在配置后会自动连接。
 
 **就这些！** 试试这样的提示词：*"Create a red, blue and yellow cube"* 或 *"Build a simple player controller"*
 

@@ -12,21 +12,19 @@ namespace MCPForUnity.Editor.Services
         bool ClearUvxCache();
 
         /// <summary>
-        /// Start the local HTTP server in a new terminal window.
-        /// Stops any existing server on the port and clears the uvx cache first.
+        /// Local HTTP server startup is externally managed and returns false in Unity.
         /// </summary>
-        /// <param name="quiet">When true, skip confirmation dialogs (used by auto-start).</param>
-        /// <returns>True if server was started successfully, false otherwise</returns>
+        /// <param name="quiet">When true, skip explanatory dialogs.</param>
+        /// <returns>Always false for HTTP Local startup inside Unity.</returns>
         bool StartLocalHttpServer(bool quiet = false);
 
         /// <summary>
-        /// Stop the local HTTP server by finding the process listening on the configured port
+        /// Local HTTP server shutdown is externally managed and returns false in Unity.
         /// </summary>
         bool StopLocalHttpServer();
 
         /// <summary>
-        /// Stop the Unity-managed local HTTP server if a handshake/pidfile exists,
-        /// even if the current transport selection has changed.
+        /// Unity-managed HTTP server shutdown is disabled for external lifecycle ownership.
         /// </summary>
         bool StopManagedLocalHttpServer();
 
@@ -43,7 +41,7 @@ namespace MCPForUnity.Editor.Services
         bool IsLocalHttpServerReachable();
 
         /// <summary>
-        /// Attempts to get the command that will be executed when starting the local HTTP server
+        /// Legacy local HTTP launch command access is disabled for external lifecycle ownership.
         /// </summary>
         /// <param name="command">The command that will be executed when available</param>
         /// <param name="error">Reason why a command could not be produced</param>
@@ -57,9 +55,9 @@ namespace MCPForUnity.Editor.Services
         bool IsLocalUrl();
 
         /// <summary>
-        /// Check if the local HTTP server can be started
+        /// Local HTTP server startup is externally managed and returns false in Unity.
         /// </summary>
-        /// <returns>True if HTTP transport is enabled and URL satisfies local launch security policy</returns>
+        /// <returns>Always false for HTTP Local startup inside Unity.</returns>
         bool CanStartLocalServer();
     }
 }
