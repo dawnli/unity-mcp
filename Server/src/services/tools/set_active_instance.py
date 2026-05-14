@@ -11,51 +11,47 @@ from transport.plugin_hub import PluginHub
 from core.config import config
 
 
+def _normalize_instance_token(instance_token: str) -> tuple[str | None, str | None]:
+    if "@" in instance_token:
+        name_part, _, hash_part = instance_token.partition("@")
+        hash_part = hash_part.strip().lower()
+        return (name_part or None), (hash_part or None)
+    return None, instance_token.strip().lower()
+
+
 @mcp_for_unity_tool(
     unity_target=None,
     group=None,
-    description="Set the active Unity instance for this client/session. Use the computed project hash; hash prefixes and stdio port numbers are also accepted.",
+    description=(
+        "Bind this MCP client session to the computed Unity project hash. "
+        "This does not remove the requirement to pass unity_instance on every Unity request."
+    ),
     annotations=ToolAnnotations(
         title="Set Active Instance",
     ),
 )
 async def set_active_instance(
         ctx: Context,
-        instance: Annotated[str, "Target computed project hash, hash prefix, or port number in stdio mode"]
+        instance: Annotated[str, "Target computed project hash or Name@hash"]
 ) -> dict[str, Any]:
     transport = (config.transport_mode or "stdio").lower()
-
-    # Port number shorthand (stdio only) - resolve via pool discovery
     value = (instance or "").strip()
-    if value.isdigit():
-        if transport == "http":
-            return {
-                "success": False,
-                "error": f"Port-based targeting ('{value}') is not supported in HTTP transport mode. "
-                         "Use the project hash computed from the absolute Unity project path, or a unique hash prefix."
-            }
-        port_int = int(value)
-        pool = get_unity_connection_pool()
-        instances = pool.discover_all_instances(force_refresh=True)
-        match = next((inst for inst in instances if getattr(inst, "port", None) == port_int), None)
-        if match is None:
-            available = ", ".join(
-                f"{inst.id} (port {getattr(inst, 'port', '?')})" for inst in instances
-            ) or "none"
-            return {
-                "success": False,
-                "error": f"No Unity instance found on port {value}. Available: {available}."
-            }
-        resolved_id = match.id
-        middleware = get_unity_instance_middleware()
-        await middleware.set_active_instance(ctx, resolved_id)
+    if not value:
         return {
-            "success": True,
-            "message": f"Active instance set to {resolved_id}",
-            "data": {
-                "instance": resolved_id,
-                "session_key": await middleware.get_session_key(ctx),
-            },
+            "success": False,
+            "error": "Instance identifier is required. Compute the project hash from the absolute Unity project path.",
+        }
+    if value.isdigit():
+        return {
+            "success": False,
+            "error": "Port-based targeting is not supported. Provide the computed Unity project hash.",
+        }
+
+    _, requested_hash = _normalize_instance_token(value)
+    if not requested_hash:
+        return {
+            "success": False,
+            "error": "Instance identifier must include a Unity project hash.",
         }
 
     # Discover running instances based on transport
@@ -82,54 +78,19 @@ async def set_active_instance(
         pool = get_unity_connection_pool()
         instances = pool.discover_all_instances(force_refresh=True)
 
-    if not instances:
+    resolved = next(
+        (
+            inst for inst in instances
+            if str(getattr(inst, "hash", "")).lower() == requested_hash
+            or getattr(inst, "id", None) == value
+        ),
+        None,
+    )
+    if resolved is None:
         return {
             "success": False,
-            "error": "No Unity instances are currently connected. Start Unity and press 'Start Session'."
+            "error": f"Unity instance '{value}' is not available.",
         }
-    ids = {inst.id: inst for inst in instances if getattr(inst, "id", None)}
-
-    value = (instance or "").strip()
-    if not value:
-        return {
-            "success": False,
-            "error": "Instance identifier is required. "
-                     "Compute the project hash from the absolute Unity project path and pass that hash."
-        }
-    resolved = None
-    if "@" in value:
-        resolved = ids.get(value)
-        if resolved is None:
-            return {
-                "success": False,
-                "error": f"Instance '{value}' not found. "
-                "Confirm the computed project hash; use mcpforunity://instances only as a diagnostic fallback."
-            }
-    else:
-        lookup = value.lower()
-        matches = []
-        for inst in instances:
-            if not getattr(inst, "id", None):
-                continue
-            inst_hash = getattr(inst, "hash", "")
-            if inst_hash and inst_hash.lower().startswith(lookup):
-                matches.append(inst)
-        if not matches:
-            return {
-                "success": False,
-                "error": f"Instance hash '{value}' does not match any running Unity editors. "
-                "Confirm the absolute project path used for hash calculation; use mcpforunity://instances only for diagnostics."
-            }
-        if len(matches) > 1:
-            matching_ids = ", ".join(
-                inst.id for inst in matches if getattr(inst, "id", None)
-            ) or "multiple instances"
-            return {
-                "success": False,
-                "error": f"Instance hash '{value}' is ambiguous ({matching_ids}). "
-                "Provide the full computed project hash."
-            }
-        resolved = matches[0]
 
     if resolved is None:
         # Should be unreachable due to logic above, but satisfies static analysis
@@ -138,16 +99,16 @@ async def set_active_instance(
             "error": "Internal error: Instance resolution failed."
         }
 
-    # Store selection in middleware (session-scoped)
     middleware = get_unity_instance_middleware()
-    # We use middleware.set_active_instance to persist the selection.
-    # The session key is an internal detail but useful for debugging response.
-    await middleware.set_active_instance(ctx, resolved.id)
+    try:
+        await middleware.set_active_instance(ctx, resolved.id)
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
     session_key = await middleware.get_session_key(ctx)
 
     return {
         "success": True,
-        "message": f"Active instance set to {resolved.id}",
+        "message": f"MCP client session bound to {resolved.id}",
         "data": {
             "instance": resolved.id,
             "session_key": session_key,

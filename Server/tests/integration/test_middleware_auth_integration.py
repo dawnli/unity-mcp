@@ -55,9 +55,10 @@ class TestMiddlewareAuthEnforcement:
         ctx.client_id = "client-1"
         middleware_ctx = Mock()
         middleware_ctx.fastmcp_context = ctx
+        middleware_ctx.message = Mock()
+        middleware_ctx.message.arguments = {"unity_instance": "Proj@hash1"}
+        middleware_ctx.message.name = "manage_scene"
 
-        # Set an active instance so the middleware doesn't try to auto-select
-        await middleware.set_active_instance(ctx, "Proj@hash1")
         # Register a matching session so resolution doesn't fail
         await registry.register("s1", "Proj", "hash1", "2022", user_id="user-55")
 
@@ -166,7 +167,7 @@ class TestHttpAuthBehavior:
             raise AssertionError("send_fn should not be used in HTTP mode")
 
         result = await unity_transport.send_with_unity_instance(
-            _unused_send_fn, None, "ping", {}
+            _unused_send_fn, "hash1", "ping", {}
         )
 
         assert result["success"] is True

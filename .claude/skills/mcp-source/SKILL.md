@@ -42,7 +42,7 @@ Convert SSH origins to HTTPS: if `origin_url` starts with `git@github.com:`, tra
 Try two approaches to find `Packages/manifest.json` files to update:
 
 **Approach A — MCP resources (preferred):**
-Read `mcpforunity://project/info` for each connected Unity instance (use `ListMcpResourcesTool` to find available instances). Extract `projectRoot` and use `{projectRoot}/Packages/manifest.json`.
+For a known target project, compute its project hash and read `mcpforunity://project/info?unity_instance=<hash>`. Extract `projectRoot` and use `{projectRoot}/Packages/manifest.json`. Do not enumerate Unity instances to choose a target.
 
 **Approach B — filesystem fallback:**
 If no MCP instances are connected, search upward from the current working directory for `Packages/manifest.json` files using Bash:

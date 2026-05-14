@@ -273,8 +273,7 @@ async def get_unity_instance_from_context(
 ) -> str | None:
     """Extract the unity_instance value from middleware state.
 
-    The instance is set via the set_active_instance tool and injected into
-    request state by UnityInstanceMiddleware.
+    UnityInstanceMiddleware injects this from the per-call unity_instance hash.
     """
     get_state_fn = getattr(ctx, "get_state", None)
     if callable(get_state_fn):

@@ -529,36 +529,20 @@ Assets/Prefabs/Player.prefab → Assets%2FPrefabs%2FPlayer.prefab
 
 ## Instance Resources
 
-### mcpforunity://instances
+### mcpforunity://instances?unity_instance=<hash>
 
-**Purpose:** Diagnostic list of running Unity Editor instances. Do not use this as the normal targeting flow.
+**Purpose:** Check whether the explicitly requested Unity Editor project hash is available. This resource does not list other instances.
 
 **Returns:**
 ```json
 {
   "transport": "http",
-  "instance_count": 2,
-  "instances": [
-    {
-      "id": "MyProject@d3b07384d113edec49eaa623",
-      "name": "MyProject",
-      "hash": "d3b07384d113edec49eaa623",
-      "unity_version": "2022.3.10f1",
-      "connected_at": "2024-01-15T10:30:00Z"
-    },
-    {
-      "id": "TestProject@4e07408562bedb8b60ce05c1",
-      "name": "TestProject",
-      "hash": "4e07408562bedb8b60ce05c1",
-      "unity_version": "2022.3.10f1",
-      "connected_at": "2024-01-15T11:00:00Z"
-    }
-  ],
-  "warnings": []
+  "requested_hash": "d3b07384d113edec49eaa623",
+  "available": true
 }
 ```
 
-**Normal flow:** compute the project hash from the absolute project path with `scripts/project_path_hash.py`, then pass `unity_instance=PROJECT_HASH` on each tool call or append `?unity_instance=PROJECT_HASH` to resource URIs. Use this resource only when routing by computed hash fails and you need diagnostics.
+**Normal flow:** compute the project hash from the absolute project path with `scripts/project_path_hash.py`, then pass `unity_instance=PROJECT_HASH` on every tool call or append `?unity_instance=PROJECT_HASH` to every Unity resource URI.
 
 ---
 
@@ -641,5 +625,5 @@ result = find_gameobjects(search_term="Player", unity_instance=PROJECT_HASH)
 # Normal flow:
 # 1. Compute the hash from the absolute Unity project path.
 # 2. Pass unity_instance=PROJECT_HASH on tool calls and ?unity_instance=PROJECT_HASH on resource reads.
-# 3. Read mcpforunity://instances only as a diagnostic fallback.
+# 3. To check availability, read mcpforunity://instances?unity_instance=PROJECT_HASH.
 ```

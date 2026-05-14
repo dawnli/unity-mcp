@@ -147,22 +147,19 @@ def status(ctx: Context):
         print_success(
             f"Connected to Unity MCP server at {config.host}:{config.port}")
 
-        # Try to get Unity instances
+        # Try to check configured Unity instance availability
         try:
             result = run_list_instances(config)
-            instances = result.get("instances", []) if isinstance(
-                result, dict) else []
-            if instances:
-                click.echo("\nConnected Unity instances:")
-                for inst in instances:
-                    project = inst.get("project", "Unknown")
-                    version = inst.get("unity_version", "Unknown")
-                    hash_id = inst.get("hash", "")[:8]
-                    click.echo(f"  • {project} (Unity {version}) [{hash_id}]")
+            if isinstance(result, dict) and result.get("available"):
+                print_success(
+                    f"Unity instance {result.get('requested_hash', config.unity_instance)} is available"
+                )
             else:
-                print_info("No Unity instances currently connected")
+                print_info(
+                    f"Unity instance {config.unity_instance or '<unset>'} is not available"
+                )
         except UnityConnectionError as e:
-            print_info(f"Could not retrieve Unity instances: {e}")
+            print_info(f"Could not check Unity instance availability: {e}")
     else:
         print_error(
             f"Cannot connect to Unity MCP server at {config.host}:{config.port}")
@@ -172,7 +169,7 @@ def status(ctx: Context):
 @cli.command("instances")
 @pass_context
 def list_instances(ctx: Context):
-    """List available Unity instances."""
+    """Check whether the configured Unity instance is available."""
     config = ctx.config or get_config()
 
     try:

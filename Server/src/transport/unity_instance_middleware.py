@@ -22,11 +22,18 @@ _diag = logging.getLogger("transport.unity_instance_middleware")
 UNITY_INSTANCE_PARAMETER_SCHEMA = {
     "type": "string",
     "description": (
-        "Optional Unity project hash, or Name@hash, used to route this call "
+        "Required Unity project hash, or Name@hash, used to route this call "
         "to a specific Unity Editor instance on the shared MCP server."
     ),
 }
 INSTANCE_ROUTED_SERVER_TOOLS = {"execute_custom_tool"}
+SERVER_ONLY_TOOLS_WITHOUT_UNITY_INSTANCE = {"manage_tools", "set_active_instance"}
+SERVER_ONLY_RESOURCES_WITHOUT_UNITY_INSTANCE = {"mcpforunity://tool-groups"}
+UNITY_INSTANCE_REQUIRED_ERROR = (
+    "unity_instance is required. Compute the project hash from the absolute "
+    "Unity project path and pass unity_instance=\"<hash>\" on every Unity "
+    "tool call, or append ?unity_instance=<hash> to every Unity resource URI."
+)
 
 # Store a global reference to the middleware instance so tools can interact
 # with it to set or clear the active unity instance.
@@ -108,9 +115,20 @@ class UnityInstanceMiddleware(Middleware):
         return "global"
 
     async def set_active_instance(self, ctx, instance_id: str) -> None:
-        """Store the active instance for this session."""
+        """Bind this MCP client session to a Unity project hash."""
         key = await self.get_session_key(ctx)
+        project_hash = self._project_hash_from_instance_id(instance_id)
+        if not project_hash:
+            raise ValueError("Unity project hash must not be empty.")
         with self._lock:
+            existing = self._active_by_key.get(key)
+            existing_hash = self._project_hash_from_instance_id(existing)
+            if existing and existing_hash != project_hash:
+                raise ValueError(
+                    "This MCP client session is already bound to Unity "
+                    f"project hash '{existing_hash}'. Start a new MCP client "
+                    f"session to target '{project_hash}'."
+                )
             self._active_by_key[key] = instance_id
 
     async def get_active_instance(self, ctx) -> str | None:
@@ -124,6 +142,18 @@ class UnityInstanceMiddleware(Middleware):
         key = await self.get_session_key(ctx)
         with self._lock:
             self._active_by_key.pop(key, None)
+
+    @staticmethod
+    def _project_hash_from_instance_id(instance_id: str | None) -> str | None:
+        if not isinstance(instance_id, str):
+            return None
+        value = instance_id.strip()
+        if not value:
+            return None
+        if "@" in value:
+            _, _, suffix = value.rpartition("@")
+            value = suffix.strip()
+        return value.lower() or None
 
     async def _discover_instances(self, ctx) -> list:
         """
@@ -174,9 +204,8 @@ class UnityInstanceMiddleware(Middleware):
         Resolve a unity_instance string to a validated instance identifier.
 
         Accepts:
-          - Bare port number like "6401" (stdio only) -> resolved Name@hash
-          - "Name@hash" exact match
-          - Hash prefix (unique prefix match against running instances)
+          - Full project hash
+          - "Name@hash" exact target
 
         Raises ValueError with a user-friendly message on failure.
         """
@@ -184,164 +213,28 @@ class UnityInstanceMiddleware(Middleware):
         if not value:
             raise ValueError("unity_instance value must not be empty.")
 
-        transport = (config.transport_mode or "stdio").lower()
-
-        # Port number (stdio only) — resolve to Name@hash via status file lookup
         if value.isdigit():
-            if transport == "http":
-                raise ValueError(
-                    f"Port-based targeting ('{value}') is not supported in HTTP transport mode. "
-                    "Use the project hash computed from the absolute Unity project path, or a unique hash prefix."
-                )
-            port_int = int(value)
-            instances = await self._discover_instances(ctx)
-            for inst in instances:
-                if getattr(inst, "port", None) == port_int:
-                    return inst.id
-            available = ", ".join(
-                f"{getattr(i, 'id', '?')} (port {getattr(i, 'port', '?')})"
-                for i in instances
-            ) or "none"
             raise ValueError(
-                f"No Unity instance found on port {value}. Available: {available}."
+                "Port-based Unity targeting is not supported. Compute the "
+                "project hash from the absolute Unity project path and pass "
+                "unity_instance=\"<hash>\"."
             )
 
-        instances = await self._discover_instances(ctx)
-        ids = {
-            getattr(inst, "id", None): inst
-            for inst in instances
-            if getattr(inst, "id", None)
-        }
-
-        # Exact Name@hash match
         if "@" in value:
-            if value in ids:
-                return value
-            available = ", ".join(ids) or "none"
-            raise ValueError(
-                f"Instance '{value}' not found. Available: {available}. "
-                "Confirm the computed project hash; use mcpforunity://instances only as a diagnostic fallback."
-            )
+            _, _, hash_value = value.rpartition("@")
+            if not hash_value.strip():
+                raise ValueError("unity_instance must include a project hash after '@'.")
+            return value
 
-        # Hash prefix match
-        lookup = value.lower()
-        matches = [
-            inst for inst in instances
-            if getattr(inst, "hash", "") and getattr(inst, "hash", "").lower().startswith(lookup)
-        ]
-        if len(matches) == 1:
-            return matches[0].id
-        if len(matches) > 1:
-            ambiguous = ", ".join(getattr(m, "id", "?") for m in matches)
-            raise ValueError(
-                f"Hash prefix '{value}' is ambiguous ({ambiguous}). "
-                "Provide the full computed project hash."
-            )
-        available = ", ".join(ids) or "none"
-        raise ValueError(
-            f"No running Unity instance matches '{value}'. Available: {available}. "
-            "Confirm the absolute project path used for hash calculation; use mcpforunity://instances only for diagnostics."
-        )
+        return value
 
     async def _maybe_autoselect_instance(self, ctx) -> str | None:
         """
-        Auto-select the sole Unity instance when no active instance is set.
+        Auto-selection is intentionally disabled.
 
-        Note: This method both *discovers* and *persists* the selection via
-        `set_active_instance` as a side-effect, since callers expect the selection
-        to stick for subsequent tool/resource calls in the same session.
+        Unity requests must name their target project hash explicitly so an
+        unavailable editor cannot cause the client to drift to another instance.
         """
-        try:
-            transport = (config.transport_mode or "stdio").lower()
-            # This implicit behavior works well for solo-users, but is dangerous for multi-user setups
-            if transport == "http" and config.http_remote_hosted:
-                return None
-            if PluginHub.is_configured():
-                try:
-                    sessions_data = await PluginHub.get_sessions()
-                    sessions = sessions_data.sessions or {}
-                    ids: list[str] = []
-                    for session_info in sessions.values():
-                        project = getattr(
-                            session_info, "project", None) or "Unknown"
-                        hash_value = getattr(session_info, "hash", None)
-                        if hash_value:
-                            ids.append(f"{project}@{hash_value}")
-                    if len(ids) == 1:
-                        chosen = ids[0]
-                        await self.set_active_instance(ctx, chosen)
-                        logger.info(
-                            "Auto-selected sole Unity instance via PluginHub: %s",
-                            chosen,
-                        )
-                        return chosen
-                    if len(ids) > 1:
-                        logger.info(
-                            "Multiple Unity instances found (%d). Pass unity_instance on any tool call "
-                            "or call set_active_instance to choose one. Available: %s",
-                            len(ids), ", ".join(ids),
-                        )
-                except (ConnectionError, ValueError, KeyError, TimeoutError, AttributeError) as exc:
-                    logger.debug(
-                        "PluginHub auto-select probe failed (%s); falling back to stdio",
-                        type(exc).__name__,
-                        exc_info=True,
-                    )
-                except Exception as exc:
-                    if isinstance(exc, (SystemExit, KeyboardInterrupt)):
-                        raise
-                    logger.debug(
-                        "PluginHub auto-select probe failed with unexpected error (%s); falling back to stdio",
-                        type(exc).__name__,
-                        exc_info=True,
-                    )
-
-            if transport != "http":
-                try:
-                    # Import here to avoid circular imports in legacy transport paths.
-                    from transport.legacy.unity_connection import get_unity_connection_pool
-
-                    pool = get_unity_connection_pool()
-                    instances = pool.discover_all_instances(force_refresh=True)
-                    ids = [getattr(inst, "id", None) for inst in instances]
-                    ids = [inst_id for inst_id in ids if inst_id]
-                    if len(ids) == 1:
-                        chosen = ids[0]
-                        await self.set_active_instance(ctx, chosen)
-                        logger.info(
-                            "Auto-selected sole Unity instance via stdio discovery: %s",
-                            chosen,
-                        )
-                        return chosen
-                    if len(ids) > 1:
-                        logger.info(
-                            "Multiple Unity instances found (%d). Pass unity_instance on any tool call "
-                            "or call set_active_instance to choose one. Available: %s",
-                            len(ids), ", ".join(ids),
-                        )
-                except (ConnectionError, ValueError, KeyError, TimeoutError, AttributeError) as exc:
-                    logger.debug(
-                        "Stdio auto-select probe failed (%s)",
-                        type(exc).__name__,
-                        exc_info=True,
-                    )
-                except Exception as exc:
-                    if isinstance(exc, (SystemExit, KeyboardInterrupt)):
-                        raise
-                    logger.debug(
-                        "Stdio auto-select probe failed with unexpected error (%s)",
-                        type(exc).__name__,
-                        exc_info=True,
-                    )
-        except Exception as exc:
-            if isinstance(exc, (SystemExit, KeyboardInterrupt)):
-                raise
-            logger.debug(
-                "Auto-select path encountered an unexpected error (%s)",
-                type(exc).__name__,
-                exc_info=True,
-            )
-
         return None
 
     async def _resolve_user_id(self) -> str | None:
@@ -364,7 +257,7 @@ class UnityInstanceMiddleware(Middleware):
         msg_args = getattr(message, "arguments", None)
         if isinstance(msg_args, dict) and "unity_instance" in msg_args:
             raw = msg_args.pop("unity_instance")
-            return None if raw is None else str(raw).strip()
+            return "" if raw is None else str(raw).strip()
 
         raw_uri = getattr(message, "uri", None)
         if raw_uri is None:
@@ -388,9 +281,14 @@ class UnityInstanceMiddleware(Middleware):
         except Exception:
             logger.debug("Could not strip unity_instance from resource URI", exc_info=True)
 
-        return next((value for value in values if value), None)
+        return next((value for value in values if value), "")
 
-    async def _inject_unity_instance(self, context: MiddlewareContext) -> None:
+    async def _inject_unity_instance(
+        self,
+        context: MiddlewareContext,
+        *,
+        require_unity_instance: bool = True,
+    ) -> None:
         """Inject active Unity instance and user_id into context if available."""
         ctx = context.fastmcp_context
 
@@ -407,15 +305,17 @@ class UnityInstanceMiddleware(Middleware):
         # Tool calls use arguments; resource reads use the URI query string.
         active_instance: str | None = None
         raw_inline_instance = self._extract_inline_unity_instance(context)
-        if raw_inline_instance:
+        if raw_inline_instance is not None:
             # Raises ValueError with a user-friendly message on invalid input.
             active_instance = await self._resolve_instance_value(raw_inline_instance, ctx)
+            await self.set_active_instance(ctx, active_instance)
             logger.debug("Per-call unity_instance resolved to: %s", active_instance)
-
-        if not active_instance:
+        elif not require_unity_instance:
             active_instance = await self.get_active_instance(ctx)
-        if not active_instance:
-            active_instance = await self._maybe_autoselect_instance(ctx)
+
+        if require_unity_instance and not active_instance:
+            raise ValueError(UNITY_INSTANCE_REQUIRED_ERROR)
+
         if active_instance:
             # If using HTTP transport (PluginHub configured), validate session
             # But for stdio transport (no PluginHub needed or maybe partially configured),
@@ -460,20 +360,40 @@ class UnityInstanceMiddleware(Middleware):
             if session_id is not None:
                 await ctx.set_state("unity_session_id", session_id)
 
+    def _context_requires_unity_instance(self, context: MiddlewareContext) -> bool:
+        message = getattr(context, "message", None)
+        tool_name = getattr(message, "name", None)
+        if isinstance(tool_name, str) and tool_name in SERVER_ONLY_TOOLS_WITHOUT_UNITY_INSTANCE:
+            return False
+
+        raw_uri = getattr(message, "uri", None)
+        if raw_uri is not None:
+            uri = str(raw_uri).split("?", 1)[0]
+            if uri in SERVER_ONLY_RESOURCES_WITHOUT_UNITY_INSTANCE:
+                return False
+
+        return True
+
     async def on_call_tool(self, context: MiddlewareContext, call_next):
         """Inject active Unity instance into tool context if available."""
-        await self._inject_unity_instance(context)
+        await self._inject_unity_instance(
+            context,
+            require_unity_instance=self._context_requires_unity_instance(context),
+        )
         return await call_next(context)
 
     async def on_read_resource(self, context: MiddlewareContext, call_next):
         """Inject active Unity instance into resource context if available."""
-        await self._inject_unity_instance(context)
+        await self._inject_unity_instance(
+            context,
+            require_unity_instance=self._context_requires_unity_instance(context),
+        )
         return await call_next(context)
 
     async def on_list_tools(self, context: MiddlewareContext, call_next):
         """Filter MCP tool listing to the Unity-enabled set when session data is available."""
         try:
-            await self._inject_unity_instance(context)
+            await self._inject_unity_instance(context, require_unity_instance=False)
         except Exception as exc:
             # Re-raise authentication errors so callers get a proper auth failure
             if isinstance(exc, RuntimeError) and "authentication" in str(exc).lower():
@@ -534,8 +454,11 @@ class UnityInstanceMiddleware(Middleware):
 
             properties.setdefault("unity_instance", dict(UNITY_INSTANCE_PARAMETER_SCHEMA))
             required = parameters.get("required")
-            if isinstance(required, list) and "unity_instance" in required:
-                required.remove("unity_instance")
+            if not isinstance(required, list):
+                required = []
+                parameters["required"] = required
+            if "unity_instance" not in required:
+                required.append("unity_instance")
 
     def _tool_accepts_unity_instance(self, tool_name: str | None) -> bool:
         if not isinstance(tool_name, str) or not tool_name:
@@ -559,6 +482,9 @@ class UnityInstanceMiddleware(Middleware):
         user_id = (await ctx.get_state("user_id")) if config.http_remote_hosted else None
         active_instance = await ctx.get_state("unity_instance")
         project_hashes = self._resolve_candidate_project_hashes(active_instance)
+        if not project_hashes:
+            return None
+
         try:
             sessions_data = await PluginHub.get_sessions(user_id=user_id)
             sessions = sessions_data.sessions if sessions_data else {}
@@ -582,19 +508,6 @@ class UnityInstanceMiddleware(Middleware):
             # Stale active_instance should not hide all Unity-managed tools.
             if active_hash not in session_hashes:
                 return None
-        else:
-            if not sessions:
-                return None
-
-            if len(sessions) == 1:
-                only_session = next(iter(sessions.values()))
-                only_hash = getattr(only_session, "hash", None)
-                if only_hash:
-                    project_hashes = [only_hash]
-            else:
-                # Multiple sessions without explicit selection: use a union so we don't
-                # hide tools that are valid in at least one visible Unity instance.
-                project_hashes = [hash_value for hash_value in session_hashes if hash_value]
 
         if not project_hashes:
             return None

@@ -82,7 +82,7 @@ Notes:
   - Strip a trailing `/`
   - Strip a trailing `/Assets` segment if an Assets path was provided
   - Hash the normalized project root path with SHA-256 and use the first 24 hex characters
-- The synced Unity MCP skill includes `scripts/project_path_hash.py`, which uses the same algorithm. `set_active_instance(instance="<hash>")` is a compatibility fallback; use `mcpforunity://instances` only as a diagnostic fallback after computed-hash routing fails.
+- The synced Unity MCP skill includes `scripts/project_path_hash.py`, which uses the same algorithm. Requests without a project hash fail, and one MCP client session cannot switch to a different project hash. `mcpforunity://instances?unity_instance=<hash>` only reports whether that specific hash is available.
 
 ---
 

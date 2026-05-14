@@ -880,9 +880,11 @@ class PluginHub(WebSocketEndpoint):
                 target_hash = suffix or None
             else:
                 target_hash = unity_instance
+        if not target_hash:
+            raise InstanceSelectionRequiredError()
 
         async def _try_once() -> tuple[str | None, int, bool]:
-            explicit_required = config.http_remote_hosted
+            explicit_required = True
             # Prefer a specific Unity instance if one was requested
             if target_hash:
                 # In remote-hosted mode with user_id, use user-scoped lookup
@@ -894,18 +896,7 @@ class PluginHub(WebSocketEndpoint):
                     sessions = await cls._registry.list_sessions(user_id=user_id)
                 return session_id, len(sessions), explicit_required
 
-            # No target provided: determine if we can auto-select
-            # In remote-hosted mode, filter sessions by user_id
-            sessions = await cls._registry.list_sessions(user_id=user_id)
-            count = len(sessions)
-            if count == 0:
-                return None, count, explicit_required
-            if explicit_required:
-                return None, count, explicit_required
-            if count == 1:
-                return next(iter(sessions.keys())), count, explicit_required
-            # Multiple sessions but no explicit target is ambiguous
-            return None, count, explicit_required
+            return None, 0, explicit_required
 
         session_id, session_count, explicit_required = await _try_once()
         if session_id is None and explicit_required and not target_hash and session_count > 0:

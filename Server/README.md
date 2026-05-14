@@ -212,7 +212,7 @@ When deploying the server as a shared remote service (e.g. for a team or Asset S
 
 - All MCP tool/resource calls and Unity plugin WebSocket connections require a valid `X-API-Key` header.
 - Each user only sees Unity instances that connected with their API key (session isolation).
-- Auto-selection of a sole Unity instance is disabled; clients must explicitly pass `unity_instance="<hash>"` on tool calls or `?unity_instance=<hash>` on resource URIs. `set_active_instance(instance="<hash>")` is a compatibility fallback.
+- Auto-selection of a sole Unity instance is disabled; clients must explicitly pass `unity_instance="<hash>"` on every tool call or `?unity_instance=<hash>` on every Unity resource URI. A single MCP client session cannot switch to a different project hash.
 - CLI REST routes (`/api/command`, `/api/instances`, `/api/custom-tools`) are disabled.
 - `/health` and `/api/auth/login-url` remain accessible without authentication.
 

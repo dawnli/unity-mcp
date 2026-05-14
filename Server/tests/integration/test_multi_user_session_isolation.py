@@ -105,8 +105,8 @@ class TestResolveSessionIdIsolation:
 
 class TestInstanceListResourceIsolation:
     @pytest.mark.asyncio
-    async def test_unity_instances_resource_filters_by_user(self, monkeypatch):
-        """The unity_instances resource should pass user_id and return filtered results."""
+    async def test_unity_instances_resource_checks_requested_hash_for_user(self, monkeypatch):
+        """The unity_instances resource reports only the requested hash availability."""
         monkeypatch.setattr(config, "http_remote_hosted", True)
         monkeypatch.setattr(config, "transport_mode", "http")
         await _setup_two_user_registry()
@@ -116,14 +116,14 @@ class TestInstanceListResourceIsolation:
 
         ctx = DummyContext()
         await ctx.set_state("user_id", "userA")
+        await ctx.set_state("unity_instance", "ProjectAlpha@hashA1")
 
         result = await unity_instances(ctx)
 
         assert result["success"] is True
-        assert result["instance_count"] == 2
-        instance_names = {i["name"] for i in result["instances"]}
-        assert instance_names == {"ProjectAlpha", "ProjectGamma"}
-        assert "ProjectBeta" not in instance_names
+        assert result["requested_hash"] == "hasha1"
+        assert result["available"] is True
+        assert "instances" not in result
 
 
 class TestSetActiveInstanceIsolation:

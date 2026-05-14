@@ -80,7 +80,7 @@ batch_execute(
 
 ### set_active_instance
 
-Compatibility fallback that pins commands to a Unity instance for the current MCP client session. Prefer passing `unity_instance=PROJECT_HASH` on each Unity-managed tool call.
+Compatibility tool that binds the current MCP client session to a Unity project hash. It does not remove the requirement to pass `unity_instance=PROJECT_HASH` on every Unity-managed tool call.
 
 ```python
 set_active_instance(

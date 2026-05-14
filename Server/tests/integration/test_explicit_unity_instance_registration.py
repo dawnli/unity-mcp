@@ -28,12 +28,12 @@ class CapturingMCP:
         return None
 
 
-async def _no_inject(_context):
+async def _no_inject(_context, **_kwargs):
     return None
 
 
 @pytest.mark.asyncio
-async def test_tool_list_schema_exposes_optional_unity_instance(monkeypatch):
+async def test_tool_list_schema_exposes_required_unity_instance(monkeypatch):
     monkeypatch.setattr(config, "transport_mode", "stdio")
 
     import transport.unity_instance_middleware as middleware_mod
@@ -67,7 +67,9 @@ async def test_tool_list_schema_exposes_optional_unity_instance(monkeypatch):
     by_name = {tool.name: tool for tool in result}
 
     assert "unity_instance" in by_name["manage_scene"].parameters["properties"]
+    assert "unity_instance" in by_name["manage_scene"].parameters["required"]
     assert "unity_instance" in by_name["execute_custom_tool"].parameters["properties"]
+    assert "unity_instance" in by_name["execute_custom_tool"].parameters["required"]
     assert "unity_instance" not in by_name["set_active_instance"].parameters["properties"]
 
 

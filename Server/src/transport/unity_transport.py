@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Awaitable, Callable, TypeVar
 
-from transport.plugin_hub import PluginHub
+from transport.plugin_hub import InstanceSelectionRequiredError, PluginHub
 from core.config import config
 from core.constants import API_KEY_HEADER
 from services.api_key_service import ApiKeyService
@@ -84,6 +84,10 @@ async def send_with_unity_instance(
                 retry_on_reload=retry_on_reload,
             )
             return normalize_unity_response(raw)
+        except InstanceSelectionRequiredError as exc:
+            return normalize_unity_response(
+                MCPResponse(success=False, error=str(exc)).model_dump()
+            )
         except Exception as exc:
             # NOTE: asyncio.TimeoutError has an empty str() by default, which is confusing for clients.
             err = str(exc) or f"{type(exc).__name__}"

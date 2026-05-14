@@ -50,18 +50,11 @@ def mock_unity_response():
 
 @pytest.fixture
 def mock_instances_response():
-    """Mock Unity instances response."""
+    """Mock Unity instance availability response."""
     return {
         "success": True,
-        "instances": [
-            {
-                "session_id": "test-session-123",
-                "project": "TestProject",
-                "hash": "abc123def456",
-                "unity_version": "2022.3.10f1",
-                "connected_at": "2024-01-01T00:00:00Z",
-            }
-        ]
+        "requested_hash": "abc123def456",
+        "available": True,
     }
 
 
@@ -1096,17 +1089,16 @@ class TestInstanceCommands:
     """Tests for instance management commands."""
 
     def test_instance_list(self, runner):
-        """Test listing Unity instances."""
+        """Test checking Unity instance availability."""
         mock_instances = {
-            "instances": [
-                {"project": "TestProject", "hash": "abc123",
-                    "unity_version": "2022.3.10f1", "session_id": "sess-1"}
-            ]
+            "success": True,
+            "requested_hash": "abc123",
+            "available": True,
         }
         with patch("cli.commands.instance.run_list_instances", return_value=mock_instances):
             result = runner.invoke(cli, ["instance", "list"])
             assert result.exit_code == 0
-            assert "TestProject" in result.output
+            assert "abc123" in result.output
 
     def test_instance_set(self, runner, mock_unity_response):
         """Test setting active instance."""

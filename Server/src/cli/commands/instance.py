@@ -10,41 +10,29 @@ from cli.utils.connection import run_command, run_list_instances, handle_unity_e
 
 @click.group()
 def instance():
-    """Unity instance management - list, select, and view instances."""
+    """Unity instance management - check and bind explicit project hashes."""
     pass
 
 
 @instance.command("list")
 @handle_unity_errors
 def list_instances():
-    """List available Unity instances.
+    """Check whether the configured Unity instance is available.
 
     \\b
     Examples:
-        unity-mcp instance list
+        unity-mcp --instance <hash> instance list
     """
     config = get_config()
 
     result = run_list_instances(config)
-    instances = result.get("instances", []) if isinstance(
-        result, dict) else []
-
-    if not instances:
-        print_info("No Unity instances currently connected")
+    if not isinstance(result, dict) or not result.get("available"):
+        print_info(f"Unity instance {config.unity_instance} is not available")
         return
 
-    click.echo("Available Unity instances:")
-    for inst in instances:
-        project = inst.get("project", "Unknown")
-        version = inst.get("unity_version", "Unknown")
-        hash_id = inst.get("hash", "")
-        session_id = inst.get("session_id", "")
-
-        # Display format: ProjectName@hash (Unity version)
-        display_id = f"{project}@{hash_id}" if hash_id else project
-        click.echo(f"  • {display_id} (Unity {version})")
-        if session_id:
-            click.echo(f"    Session: {session_id[:8]}...")
+    print_success(
+        f"Unity instance {result.get('requested_hash', config.unity_instance)} is available"
+    )
 
 
 @instance.command("set")
@@ -53,12 +41,12 @@ def list_instances():
 def set_instance(instance_id: str):
     """Set the active Unity instance.
 
-    INSTANCE_ID should be the computed project hash or a unique hash prefix.
+    INSTANCE_ID should be the computed project hash.
 
     \\b
     Examples:
         unity-mcp instance set "<hash>"
-        unity-mcp instance set abc123
+        unity-mcp instance set <hash>
     """
     config = get_config()
 
@@ -69,7 +57,7 @@ def set_instance(instance_id: str):
     if result.get("success"):
         data = result.get("data", {})
         active = data.get("instance", instance_id)
-        print_success(f"Active instance set to: {active}")
+        print_success(f"MCP client session bound to: {active}")
 
 
 @instance.command("current")
@@ -87,8 +75,5 @@ def current_instance():
     if config.unity_instance:
         click.echo(f"Configured instance: {config.unity_instance}")
     else:
-        print_info(
-            "No instance explicitly set. The server may auto-select a single instance for compatibility.")
-        print_info("AI clients should explicitly set the computed project hash.")
-        print_info("Use 'unity-mcp instance list' to see available instances.")
-        print_info("Use 'unity-mcp instance set <id>' to select one.")
+        print_info("No Unity project hash configured.")
+        print_info("Set UNITY_MCP_INSTANCE or pass --instance <hash>.")

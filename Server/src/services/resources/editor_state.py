@@ -5,14 +5,12 @@ from typing import Any
 from fastmcp import Context
 from pydantic import BaseModel
 
-from core.config import config
 from models import MCPResponse
 from services.registry import mcp_for_unity_resource
 from services.tools import get_unity_instance_from_context
 from services.state.external_changes_scanner import external_changes_scanner
 import transport.unity_transport as unity_transport
 from transport.legacy.unity_connection import async_send_command_with_retry
-from transport.plugin_hub import PluginHub
 
 
 class EditorStateUnity(BaseModel):
@@ -132,49 +130,6 @@ def _in_pytest() -> bool:
     return bool(os.environ.get("PYTEST_CURRENT_TEST"))
 
 
-async def infer_single_instance_id(ctx: Context) -> str | None:
-    """
-    Best-effort: if exactly one Unity instance is connected, return its diagnostic instance id.
-    This makes editor_state outputs self-describing even when no explicit active instance is set.
-    """
-    await ctx.info("If exactly one Unity instance is connected, return its diagnostic instance id.")
-
-    transport = (config.transport_mode or "stdio").lower()
-
-    if transport == "http":
-        # HTTP/WebSocket transport: derive from PluginHub sessions.
-        try:
-            # In remote-hosted mode, filter sessions by user_id
-            user_id = (await ctx.get_state(
-                "user_id")) if config.http_remote_hosted else None
-            sessions_data = await PluginHub.get_sessions(user_id=user_id)
-            sessions = sessions_data.sessions if hasattr(
-                sessions_data, "sessions") else {}
-            if isinstance(sessions, dict) and len(sessions) == 1:
-                session = next(iter(sessions.values()))
-                project = getattr(session, "project", None)
-                project_hash = getattr(session, "hash", None)
-                if project and project_hash:
-                    return f"{project}@{project_hash}"
-        except Exception:
-            return None
-        return None
-
-    # Stdio/TCP transport: derive from connection pool discovery.
-    try:
-        from transport.legacy.unity_connection import get_unity_connection_pool
-
-        pool = get_unity_connection_pool()
-        instances = pool.discover_all_instances(force_refresh=False)
-        if isinstance(instances, list) and len(instances) == 1:
-            inst = instances[0]
-            inst_id = getattr(inst, "id", None)
-            return str(inst_id) if inst_id else None
-    except Exception:
-        return None
-    return None
-
-
 def _enrich_advice_and_staleness(state_v2: dict[str, Any]) -> dict[str, Any]:
     now_ms = _now_unix_ms()
     observed = state_v2.get("observed_at_unix_ms")
@@ -250,10 +205,6 @@ async def get_editor_state(ctx: Context) -> MCPResponse:
     if current_instance_id in (None, ""):
         if unity_instance:
             unity_section["instance_id"] = unity_instance
-        else:
-            inferred = await infer_single_instance_id(ctx)
-            if inferred:
-                unity_section["instance_id"] = inferred
 
     # External change detection (server-side): compute per instance based on project root path.
     try:

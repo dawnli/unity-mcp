@@ -324,9 +324,9 @@ This server provides tools to interact with the Unity Game Engine Editor.
 
 Targeting Unity instances:
 - Before using Unity tools/resources for a known project, compute that project's normalized absolute-path hash with the Unity MCP skill.
-- Pass unity_instance="<hash>" on each Unity tool call. For resources, append ?unity_instance=<hash> to the resource URI.
-- Do not use mcpforunity://instances for the normal targeting flow. Use it only as a diagnostic fallback when computed-hash routing fails.
-- set_active_instance(instance="<hash>") is only a compatibility fallback for clients or resource reads that cannot carry per-call routing.
+- Pass unity_instance="<hash>" on every Unity tool call. For resources, append ?unity_instance=<hash> to every Unity resource URI.
+- Requests without a project hash fail. A single MCP client session cannot switch to a different project hash.
+- mcpforunity://instances?unity_instance=<hash> only reports whether that specific hash is available; it does not list instances.
 
 Important Workflows:
 
@@ -438,6 +438,14 @@ def create_mcp_server(project_scoped_tools: bool) -> FastMCP:
 
                 if not command_type:
                     return JSONResponse({"success": False, "error": "Missing 'type' field"}, status_code=400)
+                if not unity_instance:
+                    return JSONResponse(
+                        {
+                            "success": False,
+                            "error": "Missing 'unity_instance'. Provide the computed Unity project hash.",
+                        },
+                        status_code=400,
+                    )
 
                 # Get available sessions
                 sessions = await PluginHub.get_sessions()
@@ -450,40 +458,22 @@ def create_mcp_server(project_scoped_tools: bool) -> FastMCP:
                 # Find target session
                 session_id = None
                 session_details = None
-                instance_name, instance_hash = _normalize_instance_token(
+                _, instance_hash = _normalize_instance_token(
                     unity_instance)
-                if unity_instance:
-                    # Try to match by hash or project name
-                    for sid, details in sessions.sessions.items():
-                        if details.hash == instance_hash or details.project in (instance_name, unity_instance):
-                            session_id = sid
-                            session_details = details
-                            break
+                for sid, details in sessions.sessions.items():
+                    if details.hash == instance_hash:
+                        session_id = sid
+                        session_details = details
+                        break
 
-                # If a specific unity_instance was requested but not found, return an error
-                # (Check done here so execute_custom_tool can also validate the instance)
-                if unity_instance and not session_id:
+                if not session_id:
                     return JSONResponse(
                         {
                             "success": False,
-                            "error": f"Unity instance '{unity_instance}' not found",
+                            "error": f"Unity instance '{unity_instance}' is not available",
                         },
                         status_code=404,
                     )
-
-                # If no specific unity_instance requested, use first available session
-                # (Must be done before execute_custom_tool check so all command types benefit)
-                if not session_id:
-                    try:
-                        session_id = next(iter(sessions.sessions.keys()))
-                        session_details = sessions.sessions.get(session_id)
-                    except StopIteration:
-                        # No sessions available - sessions.sessions is empty
-                        # This should not happen since we checked at line 378, but handle gracefully
-                        return JSONResponse({
-                            "success": False,
-                            "error": "No Unity instances connected. Make sure Unity is running with MCP plugin."
-                        }, status_code=503)
 
                 # Custom tool execution - must be checked BEFORE the final PluginHub.send_command call
                 # This applies to both cases: with or without explicit unity_instance
@@ -547,20 +537,29 @@ def create_mcp_server(project_scoped_tools: bool) -> FastMCP:
                 return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
         @mcp.custom_route("/api/instances", methods=["GET"])
-        async def cli_instances_route(_: Request) -> JSONResponse:
-            """REST endpoint to list connected Unity instances."""
+        async def cli_instances_route(request: Request) -> JSONResponse:
+            """REST endpoint to check whether a specific Unity instance is available."""
             try:
+                unity_instance = request.query_params.get("instance")
+                if not unity_instance:
+                    return JSONResponse(
+                        {
+                            "success": False,
+                            "error": "Missing 'instance'. Provide the computed Unity project hash.",
+                            "available": False,
+                        },
+                        status_code=400,
+                    )
+                _, instance_hash = _normalize_instance_token(unity_instance)
                 sessions = await PluginHub.get_sessions()
-                instances = []
-                for session_id, details in sessions.sessions.items():
-                    instances.append({
-                        "session_id": session_id,
-                        "project": details.project,
-                        "hash": details.hash,
-                        "unity_version": details.unity_version,
-                        "connected_at": details.connected_at,
-                    })
-                return JSONResponse({"success": True, "instances": instances})
+                available = any(
+                    details.hash == instance_hash for details in sessions.sessions.values()
+                )
+                return JSONResponse({
+                    "success": True,
+                    "requested_hash": instance_hash,
+                    "available": available,
+                })
             except Exception as e:
                 return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
@@ -569,8 +568,16 @@ def create_mcp_server(project_scoped_tools: bool) -> FastMCP:
             """REST endpoint to list custom tools for the active Unity project."""
             try:
                 unity_instance = request.query_params.get("instance")
-                instance_name, instance_hash = _normalize_instance_token(
+                _, instance_hash = _normalize_instance_token(
                     unity_instance)
+                if not instance_hash:
+                    return JSONResponse(
+                        {
+                            "success": False,
+                            "error": "Missing 'instance'. Provide the computed Unity project hash.",
+                        },
+                        status_code=400,
+                    )
 
                 sessions = await PluginHub.get_sessions()
                 if not sessions.sessions:
@@ -580,23 +587,18 @@ def create_mcp_server(project_scoped_tools: bool) -> FastMCP:
                     }, status_code=503)
 
                 session_details = None
-                if unity_instance:
-                    # Try to match by hash or project name
-                    for _, details in sessions.sessions.items():
-                        if details.hash == instance_hash or details.project in (instance_name, unity_instance):
-                            session_details = details
-                            break
-                    if not session_details:
-                        return JSONResponse(
-                            {
-                                "success": False,
-                                "error": f"Unity instance '{unity_instance}' not found",
-                            },
-                            status_code=404,
-                        )
-                else:
-                    # No specific unity_instance requested: use first available session
-                    session_details = next(iter(sessions.sessions.values()))
+                for _, details in sessions.sessions.items():
+                    if details.hash == instance_hash:
+                        session_details = details
+                        break
+                if not session_details:
+                    return JSONResponse(
+                        {
+                            "success": False,
+                            "error": f"Unity instance '{unity_instance}' is not available",
+                        },
+                        status_code=404,
+                    )
 
                 unity_instance_hint = unity_instance
                 if session_details and session_details.hash:

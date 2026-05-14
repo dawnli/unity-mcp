@@ -27,8 +27,13 @@ async def test_plugin_hub_waits_for_reconnection_during_reload():
     # Third call: session appears (plugin reconnected)
     call_count = [0]
 
-    async def mock_list_sessions(**kwargs):
+    async def mock_get_session_id_by_hash(project_hash, user_id=None):
         call_count[0] += 1
+        if project_hash == "abc123" and call_count[0] > 2:
+            return "test-session-123"
+        return None
+
+    async def mock_list_sessions(**kwargs):
         if call_count[0] <= 2:
             # Plugin not yet reconnected
             return {}
@@ -45,6 +50,7 @@ async def test_plugin_hub_waits_for_reconnection_during_reload():
             )
             return {"test-session-123": session}
 
+    mock_registry.get_session_id_by_hash = mock_get_session_id_by_hash
     mock_registry.list_sessions = mock_list_sessions
 
     # Configure PluginHub with our mock while preserving the original state
@@ -56,7 +62,7 @@ async def test_plugin_hub_waits_for_reconnection_during_reload():
     try:
         # Call _resolve_session_id when no session is available
         # It should wait and retry until the session appears
-        session_id = await PluginHub._resolve_session_id(unity_instance=None)
+        session_id = await PluginHub._resolve_session_id(unity_instance="abc123")
 
         # Should have retried and eventually found the session
         assert session_id == "test-session-123"
@@ -69,7 +75,7 @@ async def test_plugin_hub_waits_for_reconnection_during_reload():
 
 
 @pytest.mark.asyncio
-async def test_plugin_hub_fails_after_timeout():
+async def test_plugin_hub_fails_after_timeout(monkeypatch):
     """Test that PluginHub._resolve_session_id eventually times out if plugin never reconnects."""
     from transport.plugin_hub import PluginHub
     from transport.plugin_registry import PluginRegistry
@@ -80,7 +86,9 @@ async def test_plugin_hub_fails_after_timeout():
     async def mock_list_sessions(**kwargs):
         return {}  # Never returns sessions
 
+    mock_registry.get_session_id_by_hash = AsyncMock(return_value=None)
     mock_registry.list_sessions = mock_list_sessions
+    monkeypatch.setenv("UNITY_MCP_SESSION_RESOLVE_MAX_WAIT_S", "0.05")
 
     # Configure PluginHub with our mock while preserving the original state
     original_registry = PluginHub._registry
@@ -96,7 +104,7 @@ async def test_plugin_hub_fails_after_timeout():
         try:
             # Should raise RuntimeError after timeout
             with pytest.raises(RuntimeError, match="No Unity plugins are currently connected"):
-                await PluginHub._resolve_session_id(unity_instance=None)
+                await PluginHub._resolve_session_id(unity_instance="abc123")
         finally:
             # Clean up: restore original PluginHub state
             PluginHub._registry = original_registry
@@ -273,7 +281,7 @@ async def test_plugin_hub_respects_unity_instance_preference():
         assert session_id == "session-2"
 
         # Request default (no specific instance)
-        with pytest.raises(InstanceSelectionRequiredError, match="Multiple Unity instances"):
+        with pytest.raises(InstanceSelectionRequiredError, match="selection is required"):
             await PluginHub._resolve_session_id(unity_instance=None)
 
     finally:

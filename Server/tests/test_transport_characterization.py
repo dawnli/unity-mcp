@@ -189,7 +189,7 @@ class TestUnityInstanceMiddlewareSessionManagement:
         assert await middleware.get_active_instance(mock_context) is None
 
     @pytest.mark.asyncio
-    async def test_middleware_thread_safe_updates(self):
+    async def test_middleware_rejects_hash_changes(self):
         """
         Current behavior: Middleware uses RLock to serialize access to
         _active_by_key dictionary.
@@ -199,13 +199,13 @@ class TestUnityInstanceMiddlewareSessionManagement:
         ctx.client_id = "client-123"
         ctx.session_id = "session-123"
 
-        # Rapidly update instances (would race without locking)
-        for i in range(10):
-            instance = f"Project{i}@hash{i}"
-            await middleware.set_active_instance(ctx, instance)
+        await middleware.set_active_instance(ctx, "Project0@hash0")
+        await middleware.set_active_instance(ctx, "hash0")
 
-        # Final state should be consistent
-        assert await middleware.get_active_instance(ctx) == "Project9@hash9"
+        with pytest.raises(ValueError, match="already bound"):
+            await middleware.set_active_instance(ctx, "Project1@hash1")
+
+        assert await middleware.get_active_instance(ctx) == "hash0"
 
 
 # ============================================================================
@@ -225,11 +225,13 @@ class TestUnityInstanceMiddlewareInjection:
         middleware = UnityInstanceMiddleware()
         instance_id = "Project@abc123"
 
-        await middleware.set_active_instance(mock_context, instance_id)
-
         # Create middleware context wrapper
         middleware_ctx = Mock()
         middleware_ctx.fastmcp_context = mock_context
+        middleware_ctx.message = SimpleNamespace(
+            arguments={"unity_instance": instance_id},
+            name="manage_scene",
+        )
 
         call_next_called = False
         async def mock_call_next(_ctx):
@@ -251,10 +253,13 @@ class TestUnityInstanceMiddlewareInjection:
         middleware = UnityInstanceMiddleware()
         instance_id = "Project@hash123"
 
-        await middleware.set_active_instance(mock_context, instance_id)
-
         middleware_ctx = Mock()
         middleware_ctx.fastmcp_context = mock_context
+        middleware_ctx.message = SimpleNamespace(
+            arguments={},
+            name=None,
+            uri=f"mcpforunity://editor/state?unity_instance={instance_id}",
+        )
 
         async def mock_call_next(_ctx):
             return {"status": "ok"}
@@ -264,7 +269,7 @@ class TestUnityInstanceMiddlewareInjection:
         mock_context.set_state.assert_called_with("unity_instance", instance_id)
 
     @pytest.mark.asyncio
-    async def test_middleware_does_not_inject_when_no_instance(self, mock_context):
+    async def test_middleware_errors_when_no_instance_hash(self, mock_context):
         """
         Current behavior: When no active instance is set and auto-select fails,
         middleware does not inject anything (None instance not stored).
@@ -274,6 +279,7 @@ class TestUnityInstanceMiddlewareInjection:
         # Don't set any instance (will try auto-select and fail)
         middleware_ctx = Mock()
         middleware_ctx.fastmcp_context = mock_context
+        middleware_ctx.message = SimpleNamespace(arguments={}, name="manage_scene")
 
         async def mock_call_next(_ctx):
             return {"status": "ok"}
@@ -281,12 +287,8 @@ class TestUnityInstanceMiddlewareInjection:
         # Mock PluginHub as unavailable AND legacy connection pool to prevent fallback discovery
         with patch("transport.unity_instance_middleware.PluginHub.is_configured", return_value=False):
             with patch("transport.legacy.unity_connection.get_unity_connection_pool", return_value=None):
-                await middleware.on_call_tool(middleware_ctx, mock_call_next)
-
-        # set_state should not be called for unity_instance if no instance found
-        calls = [c for c in mock_context.set_state.call_args_list
-                if len(c[0]) > 0 and c[0][0] == "unity_instance"]
-        assert len(calls) == 0
+                with pytest.raises(ValueError, match="unity_instance is required"):
+                    await middleware.on_call_tool(middleware_ctx, mock_call_next)
 
     @pytest.mark.asyncio
     async def test_list_tools_filters_disabled_unity_tools_and_aliases(self, mock_context, monkeypatch):
@@ -659,7 +661,7 @@ class TestUnityInstanceMiddlewareInjection:
         assert [tool.name for tool in filtered] == [tool.name for tool in original_tools]
 
     @pytest.mark.asyncio
-    async def test_list_tools_uses_union_of_enabled_tools_across_multiple_sessions(self, mock_context, monkeypatch):
+    async def test_list_tools_does_not_union_tools_without_bound_hash(self, mock_context, monkeypatch):
         middleware = UnityInstanceMiddleware()
         middleware_ctx = Mock()
         middleware_ctx.fastmcp_context = mock_context
@@ -710,7 +712,8 @@ class TestUnityInstanceMiddlewareInjection:
         names = [tool.name for tool in filtered]
         assert "manage_scene" in names
         assert "manage_asset" in names
-        assert "manage_script" not in names
+        assert "manage_script" in names
+        mock_get_tools.assert_not_called()
 
 
 # ============================================================================
@@ -718,13 +721,13 @@ class TestUnityInstanceMiddlewareInjection:
 # ============================================================================
 
 class TestAutoSelectInstance:
-    """Test auto-selection of sole Unity instance when none is explicitly set."""
+    """Test that implicit Unity instance auto-selection stays disabled."""
 
     @pytest.mark.asyncio
-    async def test_autoselect_via_plugin_hub_single_instance(self, mock_context):
+    async def test_autoselect_via_plugin_hub_single_instance_is_disabled(self, mock_context):
         """
         Current behavior: When single instance is available via PluginHub,
-        auto-select it and store in middleware state.
+        do not auto-select it.
         """
         middleware = UnityInstanceMiddleware()
 
@@ -746,8 +749,8 @@ class TestAutoSelectInstance:
 
                 instance = await middleware._maybe_autoselect_instance(mock_context)
 
-        assert instance == "TestProject@abc123"
-        assert await middleware.get_active_instance(mock_context) == "TestProject@abc123"
+        assert instance is None
+        assert await middleware.get_active_instance(mock_context) is None
 
     @pytest.mark.asyncio
     async def test_autoselect_fails_with_multiple_instances(self, mock_context):
@@ -796,7 +799,7 @@ class TestAutoSelectInstance:
                 with patch("transport.legacy.unity_connection.get_unity_connection_pool", return_value=None):
                     mock_get.side_effect = ConnectionError("Plugin hub unavailable")
 
-                    # When PluginHub fails, auto-select returns None (graceful fallback)
+                    # Auto-select remains disabled even when PluginHub fails.
                     instance = await middleware._maybe_autoselect_instance(mock_context)
 
         # Should return None since both PluginHub failed
@@ -1176,10 +1179,10 @@ class TestSessionResolution:
         PluginHub._loop = None
 
     @pytest.mark.asyncio
-    async def test_resolve_session_id_auto_selects_sole_instance(self, plugin_registry):
+    async def test_resolve_session_id_requires_explicit_instance(self, plugin_registry):
         """
-        Current behavior: When no target_hash provided and exactly one session
-        exists, auto-select it.
+        Current behavior: A target project hash is required even when exactly
+        one Unity session exists.
         """
         # Configure PluginHub
         loop = asyncio.get_event_loop()
@@ -1192,9 +1195,8 @@ class TestSessionResolution:
             unity_version="2022.3"
         )
 
-        session_id = await PluginHub._resolve_session_id(None)
-
-        assert session_id == "sess-sole"
+        with pytest.raises(InstanceSelectionRequiredError):
+            await PluginHub._resolve_session_id(None)
 
         # Cleanup
         PluginHub._registry = None
@@ -1224,7 +1226,7 @@ class TestSessionResolution:
             unity_version="2023.2"
         )
 
-        with pytest.raises(InstanceSelectionRequiredError, match="Multiple Unity instances"):
+        with pytest.raises(InstanceSelectionRequiredError, match="selection is required"):
             await PluginHub._resolve_session_id(None)
 
         # Cleanup

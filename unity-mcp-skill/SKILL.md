@@ -33,7 +33,7 @@ manage_scene(action="get_active", unity_instance=PROJECT_HASH)
 # mcpforunity://editor/state?unity_instance=PROJECT_HASH
 ```
 
-Do not use `mcpforunity://instances` for the normal targeting flow. It is only a diagnostic fallback when routing by the computed hash fails. `set_active_instance(instance=PROJECT_HASH)` is a compatibility fallback for clients or resources that cannot carry `unity_instance` per call. The hash input is normalized by converting `\` to `/`, lowercasing letters, stripping a trailing `/`, stripping a trailing `/Assets` segment, and hashing the normalized project root path.
+Requests without `unity_instance` fail, and one MCP client session cannot switch to a different project hash. `mcpforunity://instances?unity_instance=PROJECT_HASH` only reports whether that specific hash is available. The hash input is normalized by converting `\` to `/`, lowercasing letters, stripping a trailing `/`, stripping a trailing `/Assets` segment, and hashing the normalized project root path.
 
 **Always read relevant resources before using tools.** This prevents errors and provides the necessary context.
 
@@ -278,7 +278,7 @@ while True:
 
 ## Multi-Instance Workflow
 
-When multiple Unity Editors are running, do not ask the user to choose from `mcpforunity://instances` during the normal flow. Compute the hash for the intended absolute Unity project path and pass that hash on every Unity tool/resource request.
+When multiple Unity Editors are running, do not ask the user to choose from an instance list. Compute the hash for the intended absolute Unity project path and pass that hash on every Unity tool/resource request.
 
 ```bash
 python scripts/project_path_hash.py /absolute/path/to/UnityProject
@@ -289,7 +289,7 @@ manage_scene(action="get_active", unity_instance=PROJECT_HASH)
 # mcpforunity://editor/state?unity_instance=PROJECT_HASH
 ```
 
-`set_active_instance(instance=PROJECT_HASH)` is only a compatibility fallback; per-call routing is the stable path for shared MCP servers.
+`set_active_instance(instance=PROJECT_HASH)` can bind the current MCP client session to that hash, but it does not remove the requirement to pass `unity_instance` on every Unity request.
 
 ## Error Recovery
 
@@ -298,7 +298,7 @@ manage_scene(action="get_active", unity_instance=PROJECT_HASH)
 | Tools return "busy" | Compilation in progress | Wait, check `editor_state` |
 | "stale_file" error | File changed since SHA | Re-fetch SHA with `get_sha`, retry |
 | Connection lost | Domain reload | Wait ~5s, reconnect |
-| Commands fail silently | Wrong instance | Pass `unity_instance=PROJECT_HASH` on the call; use `set_active_instance` only as fallback |
+| Commands fail silently | Missing or wrong instance hash | Pass `unity_instance=PROJECT_HASH` on every Unity request |
 
 ## Reference Files
 

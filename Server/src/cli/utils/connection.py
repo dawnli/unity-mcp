@@ -172,24 +172,29 @@ def run_check_connection(config: Optional[CLIConfig] = None) -> bool:
 
 
 async def list_unity_instances(config: Optional[CLIConfig] = None) -> Dict[str, Any]:
-    """List available Unity instances.
+    """Check availability for the configured Unity instance.
 
     Args:
         config: Optional CLI configuration
 
     Returns:
-        Dict with list of Unity instances
+        Dict with availability for the configured Unity instance
     """
     cfg = config or get_config()
+    if not cfg.unity_instance:
+        raise UnityConnectionError(
+            "Unity project hash is required. Set UNITY_MCP_INSTANCE or pass --instance."
+        )
 
     url = f"http://{cfg.host}:{cfg.port}/api/instances"
+    params = {"instance": cfg.unity_instance}
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=10)
+            response = await client.get(url, params=params, timeout=10)
             response.raise_for_status()
             data = response.json()
-            if "instances" in data:
+            if "available" in data:
                 return data
     except httpx.ConnectError as e:
         raise UnityConnectionError(
@@ -199,7 +204,7 @@ async def list_unity_instances(config: Optional[CLIConfig] = None) -> Dict[str, 
         )
     except httpx.TimeoutException:
         raise UnityConnectionError(
-            "Connection to Unity timed out while listing instances. "
+            "Connection to Unity timed out while checking Unity instance availability. "
             "Unity may be busy or unresponsive."
         )
     except httpx.HTTPStatusError as e:
@@ -209,7 +214,7 @@ async def list_unity_instances(config: Optional[CLIConfig] = None) -> Dict[str, 
     except Exception as e:
         raise UnityConnectionError(f"Unexpected error: {e}")
 
-    raise UnityConnectionError("Failed to list Unity instances")
+    raise UnityConnectionError("Failed to check Unity instance availability")
 
 
 def run_list_instances(config: Optional[CLIConfig] = None) -> Dict[str, Any]:

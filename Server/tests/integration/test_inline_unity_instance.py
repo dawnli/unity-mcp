@@ -1,405 +1,158 @@
 """
-Tests for per-call unity_instance routing via middleware argument interception.
-
-When a tool call includes unity_instance in its arguments, the middleware:
-  1. Pops the key before Pydantic validation sees it
-  2. Resolves it to a validated instance identifier
-  3. Sets it in request-scoped state for that call only (does NOT persist to session)
+Tests for strict per-call unity_instance routing.
 """
-import sys
-import types
 from types import SimpleNamespace
 
 import pytest
 
 from .test_helpers import DummyContext
 from core.config import config
+from transport.unity_instance_middleware import UnityInstanceMiddleware
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 class DummyMiddlewareContext:
-    """Minimal MiddlewareContext stand-in with a mutable arguments dict."""
-
-    def __init__(self, ctx, arguments: dict | None = None, uri: str | None = None):
+    def __init__(
+        self,
+        ctx,
+        arguments: dict | None = None,
+        uri: str | None = None,
+        name: str | None = "manage_scene",
+    ):
         self.fastmcp_context = ctx
-        self.message = SimpleNamespace(arguments=arguments if arguments is not None else {})
+        self.message = SimpleNamespace(
+            arguments=arguments if arguments is not None else {},
+            name=name,
+        )
         if uri is not None:
             self.message.uri = uri
 
 
-def _make_middleware(monkeypatch, *, transport="stdio", plugin_hub_configured=False, sessions=None, pool_instances=None):
-    """
-    Build a UnityInstanceMiddleware with patched transport dependencies.
-
-    sessions: dict of session_id -> SimpleNamespace(project=..., hash=...)
-    pool_instances: list of SimpleNamespace(id=..., hash=...)
-    """
-    plugin_hub_mod = types.ModuleType("transport.plugin_hub")
-
-    _sessions = sessions or {}
-    _configured = plugin_hub_configured
-
-    class FakePluginHub:
-        @classmethod
-        def is_configured(cls):
-            return _configured
-
-        @classmethod
-        async def get_sessions(cls, user_id=None):
-            return SimpleNamespace(sessions=_sessions)
-
-        @classmethod
-        async def _resolve_session_id(cls, instance, user_id=None):
-            return None
-
-    plugin_hub_mod.PluginHub = FakePluginHub
-    monkeypatch.setitem(sys.modules, "transport.plugin_hub", plugin_hub_mod)
-    monkeypatch.delitem(sys.modules, "transport.unity_instance_middleware", raising=False)
-
-    from transport.unity_instance_middleware import UnityInstanceMiddleware
-
-    middleware = UnityInstanceMiddleware()
-    monkeypatch.setattr(config, "transport_mode", transport)
-    monkeypatch.setattr(config, "http_remote_hosted", False)
-
-    if pool_instances is not None:
-        async def fake_discover(ctx):
-            return pool_instances
-        monkeypatch.setattr(middleware, "_discover_instances", fake_discover)
-
-    return middleware
-
-
-# ---------------------------------------------------------------------------
-# Pop behaviour
-# ---------------------------------------------------------------------------
-
 @pytest.mark.asyncio
 async def test_unity_instance_is_popped_from_arguments(monkeypatch):
-    """unity_instance key must be removed from arguments before the tool function sees them."""
-    instances = [SimpleNamespace(id="Proj@abc123", hash="abc123")]
-    mw = _make_middleware(monkeypatch, pool_instances=instances)
-
+    monkeypatch.setattr(config, "transport_mode", "stdio")
+    mw = UnityInstanceMiddleware()
     ctx = DummyContext()
-    ctx.client_id = "client-1"
     args = {"action": "get_active", "unity_instance": "abc123"}
-    mw_ctx = DummyMiddlewareContext(ctx, arguments=args)
 
-    await mw._inject_unity_instance(mw_ctx)
+    await mw._inject_unity_instance(DummyMiddlewareContext(ctx, arguments=args))
 
-    assert "unity_instance" not in args
-    assert "action" in args  # other keys untouched
+    assert args == {"action": "get_active"}
+    assert await ctx.get_state("unity_instance") == "abc123"
+    assert await mw.get_active_instance(ctx) == "abc123"
 
 
 @pytest.mark.asyncio
-async def test_arguments_without_unity_instance_untouched(monkeypatch):
-    """When unity_instance is absent, arguments dict is left completely untouched."""
-    mw = _make_middleware(monkeypatch, pool_instances=[SimpleNamespace(id="Proj@abc123", hash="abc123")])
-
+async def test_missing_unity_instance_errors_and_does_not_autoselect():
+    mw = UnityInstanceMiddleware()
     ctx = DummyContext()
-    ctx.client_id = "client-1"
-    # Seed a persisted instance so auto-select isn't needed
-    await mw.set_active_instance(ctx, "Proj@abc123")
+    args = {"action": "get_active"}
 
-    args = {"action": "get_active", "name": "Test"}
-    mw_ctx = DummyMiddlewareContext(ctx, arguments=args)
+    with pytest.raises(ValueError, match="unity_instance is required"):
+        await mw._inject_unity_instance(DummyMiddlewareContext(ctx, arguments=args))
 
-    await mw._inject_unity_instance(mw_ctx)
+    assert args == {"action": "get_active"}
+    assert await mw.get_active_instance(ctx) is None
 
-    assert args == {"action": "get_active", "name": "Test"}
-
-
-# ---------------------------------------------------------------------------
-# Per-call routing (no persistence)
-# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_inline_routes_to_specified_instance(monkeypatch):
-    """Per-call unity_instance sets request state to the resolved instance."""
-    instances = [SimpleNamespace(id="Proj@abc123", hash="abc123")]
-    mw = _make_middleware(monkeypatch, pool_instances=instances)
-
+async def test_same_session_may_repeat_same_project_hash():
+    mw = UnityInstanceMiddleware()
     ctx = DummyContext()
-    ctx.client_id = "client-1"
-    mw_ctx = DummyMiddlewareContext(ctx, arguments={"unity_instance": "abc123"})
 
-    await mw._inject_unity_instance(mw_ctx)
+    await mw._inject_unity_instance(
+        DummyMiddlewareContext(ctx, arguments={"unity_instance": "Project@abc123"})
+    )
+    await mw._inject_unity_instance(
+        DummyMiddlewareContext(ctx, arguments={"unity_instance": "abc123"})
+    )
 
-    assert await ctx.get_state("unity_instance") == "Proj@abc123"
+    assert await ctx.get_state("unity_instance") == "abc123"
+    assert await mw.get_active_instance(ctx) == "abc123"
 
 
 @pytest.mark.asyncio
-async def test_inline_does_not_persist_to_session(monkeypatch):
-    """Per-call unity_instance must not change the session-persisted instance."""
-    instances = [
-        SimpleNamespace(id="ProjA@aaa111", hash="aaa111"),
-        SimpleNamespace(id="ProjB@bbb222", hash="bbb222"),
-    ]
-    mw = _make_middleware(monkeypatch, pool_instances=instances)
-
+async def test_same_session_cannot_change_project_hash():
+    mw = UnityInstanceMiddleware()
     ctx = DummyContext()
-    ctx.client_id = "client-1"
-    await mw.set_active_instance(ctx, "ProjA@aaa111")
 
-    # Call 1: inline override to ProjB
-    mw_ctx1 = DummyMiddlewareContext(ctx, arguments={"unity_instance": "bbb222"})
-    await mw._inject_unity_instance(mw_ctx1)
-    assert await ctx.get_state("unity_instance") == "ProjB@bbb222"
+    await mw._inject_unity_instance(
+        DummyMiddlewareContext(ctx, arguments={"unity_instance": "ProjectA@aaa111"})
+    )
 
-    # Call 2: no inline — must revert to session-persisted ProjA
-    mw_ctx2 = DummyMiddlewareContext(ctx, arguments={})
-    await mw._inject_unity_instance(mw_ctx2)
-    assert await ctx.get_state("unity_instance") == "ProjA@aaa111"
+    with pytest.raises(ValueError, match="already bound"):
+        await mw._inject_unity_instance(
+            DummyMiddlewareContext(ctx, arguments={"unity_instance": "ProjectB@bbb222"})
+        )
 
 
 @pytest.mark.asyncio
-async def test_active_instance_is_scoped_by_mcp_session_id(monkeypatch):
-    """Two MCP client sessions with the same client_id keep independent defaults."""
-    mw = _make_middleware(monkeypatch)
-
-    ctx_a = DummyContext()
-    ctx_a.client_id = "same-aiide-client"
-    ctx_a.session_id = "mcp-session-a"
-    ctx_b = DummyContext()
-    ctx_b.client_id = "same-aiide-client"
-    ctx_b.session_id = "mcp-session-b"
-
-    await mw.set_active_instance(ctx_a, "ProjA@aaa111")
-    await mw.set_active_instance(ctx_b, "ProjB@bbb222")
-
-    assert await mw.get_active_instance(ctx_a) == "ProjA@aaa111"
-    assert await mw.get_active_instance(ctx_b) == "ProjB@bbb222"
-
-
-@pytest.mark.asyncio
-async def test_inline_overrides_session_persisted_instance(monkeypatch):
-    """Inline unity_instance takes precedence over session-persisted instance."""
-    instances = [
-        SimpleNamespace(id="ProjA@aaa111", hash="aaa111"),
-        SimpleNamespace(id="ProjB@bbb222", hash="bbb222"),
-    ]
-    mw = _make_middleware(monkeypatch, pool_instances=instances)
-
+async def test_empty_unity_instance_errors():
+    mw = UnityInstanceMiddleware()
     ctx = DummyContext()
-    ctx.client_id = "client-1"
-    await mw.set_active_instance(ctx, "ProjA@aaa111")
 
-    mw_ctx = DummyMiddlewareContext(ctx, arguments={"unity_instance": "ProjB@bbb222"})
-    await mw._inject_unity_instance(mw_ctx)
-
-    assert await ctx.get_state("unity_instance") == "ProjB@bbb222"
-    # Session still pinned to ProjA
-    assert await mw.get_active_instance(ctx) == "ProjA@aaa111"
-
-
-# ---------------------------------------------------------------------------
-# Port number resolution (stdio)
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_port_number_resolves_to_name_hash_stdio(monkeypatch):
-    """Bare port number resolves to the matching Name@hash in stdio mode."""
-    instances = [
-        SimpleNamespace(id="Proj@abc123", hash="abc123", port=6401),
-        SimpleNamespace(id="Other@def456", hash="def456", port=6402),
-    ]
-    mw = _make_middleware(monkeypatch, transport="stdio", pool_instances=instances)
-
-    ctx = DummyContext()
-    ctx.client_id = "client-1"
-    mw_ctx = DummyMiddlewareContext(ctx, arguments={"unity_instance": "6401"})
-
-    await mw._inject_unity_instance(mw_ctx)
-
-    assert await ctx.get_state("unity_instance") == "Proj@abc123"
+    with pytest.raises(ValueError, match="must not be empty"):
+        await mw._inject_unity_instance(
+            DummyMiddlewareContext(ctx, arguments={"unity_instance": "  "})
+        )
 
 
 @pytest.mark.asyncio
-async def test_port_number_not_found_raises(monkeypatch):
-    """Port number with no matching instance raises ValueError."""
-    instances = [SimpleNamespace(id="Proj@abc123", hash="abc123", port=6401)]
-    mw = _make_middleware(monkeypatch, transport="stdio", pool_instances=instances)
-
+async def test_port_number_targeting_errors():
+    mw = UnityInstanceMiddleware()
     ctx = DummyContext()
-    ctx.client_id = "client-1"
-    mw_ctx = DummyMiddlewareContext(ctx, arguments={"unity_instance": "9999"})
 
-    with pytest.raises(ValueError, match="No Unity instance found on port 9999"):
-        await mw._inject_unity_instance(mw_ctx)
+    with pytest.raises(ValueError, match="Port-based Unity targeting is not supported"):
+        await mw._inject_unity_instance(
+            DummyMiddlewareContext(ctx, arguments={"unity_instance": "6401"})
+        )
 
 
 @pytest.mark.asyncio
-async def test_port_number_errors_in_http_mode(monkeypatch):
-    """Bare port number raises ValueError in HTTP transport mode."""
-    mw = _make_middleware(monkeypatch, transport="http")
-
+async def test_resource_uri_query_routes_and_strips_query():
+    mw = UnityInstanceMiddleware()
     ctx = DummyContext()
-    ctx.client_id = "client-1"
-    mw_ctx = DummyMiddlewareContext(ctx, arguments={"unity_instance": "6401"})
-
-    with pytest.raises(ValueError, match="not supported in HTTP transport mode"):
-        await mw._inject_unity_instance(mw_ctx)
-
-
-# ---------------------------------------------------------------------------
-# Name@hash and hash prefix resolution
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_name_at_hash_resolves_exactly(monkeypatch):
-    """Full Name@hash resolves directly without discovery."""
-    instances = [SimpleNamespace(id="Proj@abc123", hash="abc123")]
-    mw = _make_middleware(monkeypatch, pool_instances=instances)
-
-    ctx = DummyContext()
-    ctx.client_id = "client-1"
-    mw_ctx = DummyMiddlewareContext(ctx, arguments={"unity_instance": "Proj@abc123"})
-
-    await mw._inject_unity_instance(mw_ctx)
-
-    assert await ctx.get_state("unity_instance") == "Proj@abc123"
-
-
-@pytest.mark.asyncio
-async def test_unknown_name_at_hash_raises(monkeypatch):
-    """Unknown Name@hash raises ValueError."""
-    instances = [SimpleNamespace(id="Proj@abc123", hash="abc123")]
-    mw = _make_middleware(monkeypatch, pool_instances=instances)
-
-    ctx = DummyContext()
-    ctx.client_id = "client-1"
-    mw_ctx = DummyMiddlewareContext(ctx, arguments={"unity_instance": "Ghost@deadbeef"})
-
-    with pytest.raises(ValueError, match="not found"):
-        await mw._inject_unity_instance(mw_ctx)
-
-
-@pytest.mark.asyncio
-async def test_hash_prefix_resolves_unique(monkeypatch):
-    """Unique hash prefix resolves to the full Name@hash."""
-    instances = [SimpleNamespace(id="Proj@abc123", hash="abc123")]
-    mw = _make_middleware(monkeypatch, pool_instances=instances)
-
-    ctx = DummyContext()
-    ctx.client_id = "client-1"
-    mw_ctx = DummyMiddlewareContext(ctx, arguments={"unity_instance": "abc"})
-
-    await mw._inject_unity_instance(mw_ctx)
-
-    assert await ctx.get_state("unity_instance") == "Proj@abc123"
-
-
-@pytest.mark.asyncio
-async def test_ambiguous_hash_prefix_raises(monkeypatch):
-    """Ambiguous hash prefix raises ValueError."""
-    instances = [
-        SimpleNamespace(id="ProjA@abc111", hash="abc111"),
-        SimpleNamespace(id="ProjB@abc222", hash="abc222"),
-    ]
-    mw = _make_middleware(monkeypatch, pool_instances=instances)
-
-    ctx = DummyContext()
-    ctx.client_id = "client-1"
-    mw_ctx = DummyMiddlewareContext(ctx, arguments={"unity_instance": "abc"})
-
-    with pytest.raises(ValueError, match="ambiguous"):
-        await mw._inject_unity_instance(mw_ctx)
-
-
-@pytest.mark.asyncio
-async def test_no_match_raises(monkeypatch):
-    """Hash prefix matching nothing raises ValueError."""
-    instances = [SimpleNamespace(id="Proj@abc123", hash="abc123")]
-    mw = _make_middleware(monkeypatch, pool_instances=instances)
-
-    ctx = DummyContext()
-    ctx.client_id = "client-1"
-    mw_ctx = DummyMiddlewareContext(ctx, arguments={"unity_instance": "xyz"})
-
-    with pytest.raises(ValueError, match="No running Unity instance"):
-        await mw._inject_unity_instance(mw_ctx)
-
-
-# ---------------------------------------------------------------------------
-# Edge cases
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_none_unity_instance_falls_through_to_session(monkeypatch):
-    """None value for unity_instance falls through to session-persisted instance."""
-    mw = _make_middleware(monkeypatch)
-    ctx = DummyContext()
-    ctx.client_id = "client-1"
-    await mw.set_active_instance(ctx, "Proj@abc123")
-
-    mw_ctx = DummyMiddlewareContext(ctx, arguments={"unity_instance": None, "action": "x"})
-
-    await mw._inject_unity_instance(mw_ctx)
-
-    assert await ctx.get_state("unity_instance") == "Proj@abc123"
-
-
-@pytest.mark.asyncio
-async def test_empty_string_unity_instance_falls_through_to_session(monkeypatch):
-    """Empty string unity_instance falls through to session-persisted instance."""
-    mw = _make_middleware(monkeypatch)
-    ctx = DummyContext()
-    ctx.client_id = "client-1"
-    await mw.set_active_instance(ctx, "Proj@abc123")
-
-    mw_ctx = DummyMiddlewareContext(ctx, arguments={"unity_instance": "  "})
-
-    await mw._inject_unity_instance(mw_ctx)
-
-    assert await ctx.get_state("unity_instance") == "Proj@abc123"
-
-
-@pytest.mark.asyncio
-async def test_resource_uri_query_routes_inline_instance(monkeypatch):
-    """Resource reads can route via ?unity_instance=... without session state."""
-    instances = [
-        SimpleNamespace(id="ProjA@aaa111", hash="aaa111"),
-        SimpleNamespace(id="ProjB@bbb222", hash="bbb222"),
-    ]
-    mw = _make_middleware(monkeypatch, pool_instances=instances)
-    ctx = DummyContext()
-    ctx.client_id = "client-1"
-    await mw.set_active_instance(ctx, "ProjA@aaa111")
-
     resource_ctx = DummyMiddlewareContext(
         ctx,
         uri="mcpforunity://editor/state?unity_instance=bbb222",
+        name=None,
     )
 
     await mw._inject_unity_instance(resource_ctx)
 
-    assert await ctx.get_state("unity_instance") == "ProjB@bbb222"
-    assert await mw.get_active_instance(ctx) == "ProjA@aaa111"
+    assert await ctx.get_state("unity_instance") == "bbb222"
     assert resource_ctx.message.uri == "mcpforunity://editor/state"
 
 
 @pytest.mark.asyncio
-async def test_resource_without_query_uses_session_state(monkeypatch):
-    """Resource reads without unity_instance query keep compatibility state."""
-    mw = _make_middleware(monkeypatch)
+async def test_resource_without_query_errors():
+    mw = UnityInstanceMiddleware()
     ctx = DummyContext()
-    ctx.client_id = "client-1"
-    await mw.set_active_instance(ctx, "Proj@abc123")
 
-    resource_ctx = DummyMiddlewareContext(ctx, uri="mcpforunity://editor/state")
-
-    await mw._inject_unity_instance(resource_ctx)
-
-    assert await ctx.get_state("unity_instance") == "Proj@abc123"
+    with pytest.raises(ValueError, match="unity_instance is required"):
+        await mw._inject_unity_instance(
+            DummyMiddlewareContext(ctx, uri="mcpforunity://editor/state", name=None)
+        )
 
 
 @pytest.mark.asyncio
-async def test_list_tools_exposes_optional_unity_instance(monkeypatch):
-    """Unity-managed tools advertise per-call routing in their input schema."""
-    mw = _make_middleware(monkeypatch)
+async def test_tool_groups_resource_does_not_require_unity_instance():
+    mw = UnityInstanceMiddleware()
+    ctx = DummyContext()
+    resource_ctx = DummyMiddlewareContext(
+        ctx,
+        uri="mcpforunity://tool-groups",
+        name=None,
+    )
+
+    async def call_next(_context):
+        return {}
+
+    await mw.on_read_resource(resource_ctx, call_next)
+
+
+@pytest.mark.asyncio
+async def test_list_tools_marks_unity_instance_required(monkeypatch):
+    mw = UnityInstanceMiddleware()
 
     def fake_registry():
         return [
@@ -410,7 +163,6 @@ async def test_list_tools_exposes_optional_unity_instance(monkeypatch):
     monkeypatch.setattr("transport.unity_instance_middleware.get_registered_tools", fake_registry)
 
     ctx = DummyContext()
-    mw_ctx = DummyMiddlewareContext(ctx, arguments={})
     tools = [
         SimpleNamespace(name="manage_scene", parameters={"type": "object", "properties": {}}),
         SimpleNamespace(name="set_active_instance", parameters={"type": "object", "properties": {}}),
@@ -419,79 +171,33 @@ async def test_list_tools_exposes_optional_unity_instance(monkeypatch):
     async def call_next(_context):
         return tools
 
-    result = await mw.on_list_tools(mw_ctx, call_next)
+    result = await mw.on_list_tools(DummyMiddlewareContext(ctx), call_next)
 
-    manage_schema = result[0].parameters["properties"]
-    server_schema = result[1].parameters["properties"]
-    assert "unity_instance" in manage_schema
-    assert "unity_instance" not in server_schema
+    manage_schema = result[0].parameters
+    server_schema = result[1].parameters
+    assert "unity_instance" in manage_schema["properties"]
+    assert "unity_instance" in manage_schema["required"]
+    assert "unity_instance" not in server_schema["properties"]
 
-
-# ---------------------------------------------------------------------------
-# set_active_instance tool: port number support
-# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_set_active_instance_port_stdio(monkeypatch):
-    """set_active_instance accepts a port number in stdio mode and resolves to Name@hash."""
+async def test_set_active_instance_rejects_port(monkeypatch):
     monkeypatch.setattr(config, "transport_mode", "stdio")
-    monkeypatch.setattr(config, "http_remote_hosted", False)
-
-    from transport.unity_instance_middleware import UnityInstanceMiddleware, set_unity_instance_middleware
-    mw = UnityInstanceMiddleware()
-    set_unity_instance_middleware(mw)
-
-    pool_instance = SimpleNamespace(id="Proj@abc123", hash="abc123", port=6401)
-
-    class FakePool:
-        def discover_all_instances(self, force_refresh=False):
-            return [pool_instance]
-
-    import services.tools.set_active_instance as sat
-    monkeypatch.setattr(sat, "get_unity_connection_pool", lambda: FakePool())
 
     from services.tools.set_active_instance import set_active_instance
 
-    ctx = DummyContext()
-    ctx.client_id = "client-1"
-
-    result = await set_active_instance(ctx, instance="6401")
-
-    assert result["success"] is True
-    assert result["data"]["instance"] == "Proj@abc123"
-    assert await mw.get_active_instance(ctx) == "Proj@abc123"
-
-
-@pytest.mark.asyncio
-async def test_set_active_instance_port_http_errors(monkeypatch):
-    """set_active_instance rejects port numbers in HTTP mode."""
-    monkeypatch.setattr(config, "transport_mode", "http")
-    monkeypatch.setattr(config, "http_remote_hosted", False)
-
-    from services.tools.set_active_instance import set_active_instance
-
-    ctx = DummyContext()
-    ctx.client_id = "client-1"
-
-    result = await set_active_instance(ctx, instance="6401")
+    result = await set_active_instance(DummyContext(), instance="6401")
 
     assert result["success"] is False
-    assert "not supported in HTTP transport mode" in result["error"]
+    assert "Port-based targeting is not supported" in result["error"]
 
-
-# ---------------------------------------------------------------------------
-# batch_execute rejects inner unity_instance
-# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_batch_execute_rejects_inner_unity_instance():
-    """batch_execute raises ValueError when an inner command contains unity_instance."""
     from services.tools.batch_execute import batch_execute
 
     ctx = DummyContext()
-    ctx.client_id = "client-1"
     ctx._state["unity_instance"] = "Proj@abc123"
-
     commands = [
         {"tool": "manage_scene", "params": {"action": "get_active", "unity_instance": "6402"}},
     ]

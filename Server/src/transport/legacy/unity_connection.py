@@ -531,7 +531,7 @@ class UnityConnectionPool:
         Resolve an instance identifier to a specific Unity instance.
 
         Args:
-            instance_identifier: User-provided identifier (name, hash, name@hash, path, port, or None)
+            instance_identifier: User-provided identifier (hash or name@hash)
             instances: List of available instances
 
         Returns:
@@ -545,95 +545,31 @@ class UnityConnectionPool:
                 "No Unity Editor instances found. Please ensure Unity is running with MCP for Unity bridge."
             )
 
-        # Use default instance if no identifier provided
         if instance_identifier is None:
-            if self._default_instance_id:
-                instance_identifier = self._default_instance_id
-                logger.debug(f"Using default instance: {instance_identifier}")
-            else:
-                # Use the most recently active instance
-                # Instances with no heartbeat (None) should be sorted last (use 0 as sentinel)
-                sorted_instances = sorted(
-                    instances,
-                    key=lambda inst: inst.last_heartbeat.timestamp() if inst.last_heartbeat else 0.0,
-                    reverse=True,
-                )
-                logger.info(
-                    f"No instance specified, using most recent: {sorted_instances[0].id}")
-                return sorted_instances[0]
+            raise ConnectionError(
+                "Unity project hash is required. Pass unity_instance=\"<hash>\"."
+            )
 
         identifier = instance_identifier.strip()
+        if not identifier:
+            raise ConnectionError(
+                "Unity project hash is required. Pass unity_instance=\"<hash>\"."
+            )
 
         # Try exact ID match first
         for inst in instances:
             if inst.id == identifier:
                 return inst
 
-        # Try project name match
-        name_matches = [inst for inst in instances if inst.name == identifier]
-        if len(name_matches) == 1:
-            return name_matches[0]
-        elif len(name_matches) > 1:
-            # Multiple projects with same name - return helpful error
-            suggestions = [
-                {
-                    "id": inst.id,
-                    "path": inst.path,
-                    "port": inst.port,
-                    "suggest": f"Use unity_instance='{inst.id}'"
-                }
-                for inst in name_matches
-            ]
-            raise ConnectionError(
-                f"Project name '{identifier}' matches {len(name_matches)} instances. "
-                f"Please use the full format (e.g., '{name_matches[0].id}'). "
-                f"Available instances: {suggestions}"
-            )
-
-        # Try hash match
-        hash_matches = [inst for inst in instances if inst.hash ==
-                        identifier or inst.hash.startswith(identifier)]
+        # Try exact hash match
+        hash_matches = [inst for inst in instances if inst.hash == identifier]
         if len(hash_matches) == 1:
             return hash_matches[0]
-        elif len(hash_matches) > 1:
-            raise ConnectionError(
-                f"Hash '{identifier}' matches multiple instances: {[inst.id for inst in hash_matches]}"
-            )
-
-        # Try composite format: Name@Hash or Name@Port
-        if "@" in identifier:
-            name_part, hint_part = identifier.split("@", 1)
-            composite_matches = [
-                inst for inst in instances
-                if inst.name == name_part and (
-                    inst.hash.startswith(hint_part) or str(
-                        inst.port) == hint_part
-                )
-            ]
-            if len(composite_matches) == 1:
-                return composite_matches[0]
-
-        # Try port match (as string)
-        try:
-            port_num = int(identifier)
-            port_matches = [
-                inst for inst in instances if inst.port == port_num]
-            if len(port_matches) == 1:
-                return port_matches[0]
-        except ValueError:
-            pass
-
-        # Try path match
-        path_matches = [inst for inst in instances if inst.path == identifier]
-        if len(path_matches) == 1:
-            return path_matches[0]
 
         # Nothing matched
-        available_ids = [inst.id for inst in instances]
         raise ConnectionError(
-            f"Unity instance '{identifier}' not found. "
-            f"Available instances: {available_ids}. "
-            f"Check mcpforunity://instances resource for all instances."
+            f"Unity instance '{identifier}' is not available. "
+            "Confirm the computed project hash and pass it explicitly."
         )
 
     def get_connection(self, instance_identifier: str | None = None) -> UnityConnection:

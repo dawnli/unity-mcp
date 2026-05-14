@@ -183,7 +183,7 @@ Normal AI targeting flow:
 2. Pass `unity_instance="<hash>"` on every Unity-managed tool call.
 3. For resource reads, append `?unity_instance=<hash>` to the resource URI.
 
-`set_active_instance(instance="<hash>")` remains available as a compatibility fallback for clients or resources that cannot carry per-call routing. Do not use the `unity_instances` resource for normal targeting; it is a diagnostic fallback if routing by computed hash fails.
+Requests that omit the project hash fail. A single MCP client session is bound to the first project hash it uses; using a different hash in the same session fails. `mcpforunity://instances?unity_instance=<hash>` only reports whether that specific hash is available and never lists other instances.
 
 Manual validation cases are in [`docs/guides/MULTI_CLIENT_ROUTING_TESTS.md`](docs/guides/MULTI_CLIENT_ROUTING_TESTS.md).
 </details>

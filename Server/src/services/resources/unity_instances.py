@@ -1,125 +1,83 @@
 """
-Resource to list all available Unity Editor instances.
+Resource to check whether the explicitly requested Unity Editor instance is available.
 """
 from typing import Any
 
 from fastmcp import Context
+
+from core.config import config
 from services.registry import mcp_for_unity_resource
 from transport.legacy.unity_connection import get_unity_connection_pool
 from transport.plugin_hub import PluginHub
-from core.config import config
+
+
+def _project_hash_from_instance(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    if "@" in value:
+        _, _, value = value.rpartition("@")
+        value = value.strip()
+    return value.lower() or None
 
 
 @mcp_for_unity_resource(
     uri="mcpforunity://instances",
     name="unity_instances",
-    description="Lists all running Unity Editor instances with their details.\n\nURI: mcpforunity://instances"
+    description=(
+        "Checks whether the requested Unity Editor instance is available. "
+        "This resource requires ?unity_instance=<project-hash> and does not list instances.\n\n"
+        "URI: mcpforunity://instances?unity_instance=<hash>"
+    ),
 )
 async def unity_instances(ctx: Context) -> dict[str, Any]:
     """
-    List all available Unity Editor instances.
-
-    Returns information about each instance including:
-    - id: Unique identifier (ProjectName@hash)
-    - name: Project name
-    - path: Full project path (stdio only)
-    - hash: project path hash
-    - port: TCP port number (stdio only)
-    - status: Current status (running, reloading, etc.) (stdio only)
-    - last_heartbeat: Last heartbeat timestamp (stdio only)
-    - unity_version: Unity version (if available)
-    - connected_at: Connection timestamp (HTTP only)
-
-    Returns:
-        Dictionary containing list of instances and metadata
+    Return availability for only the instance named by the request's unity_instance hash.
     """
-    await ctx.info("Listing Unity instances")
+    unity_instance = await ctx.get_state("unity_instance")
+    requested_hash = _project_hash_from_instance(unity_instance)
+    if not requested_hash:
+        return {
+            "success": False,
+            "error": "unity_instance is required. Append ?unity_instance=<hash> to this resource URI.",
+            "available": False,
+        }
+
+    await ctx.info(f"Checking Unity instance availability for {requested_hash}")
 
     try:
         transport = (config.transport_mode or "stdio").lower()
+        available = False
+
         if transport == "http":
-            # HTTP/WebSocket transport: query PluginHub
-            # In remote-hosted mode, filter sessions by user_id
-            user_id = (await ctx.get_state(
-                "user_id")) if config.http_remote_hosted else None
+            user_id = (await ctx.get_state("user_id")) if config.http_remote_hosted else None
             sessions_data = await PluginHub.get_sessions(user_id=user_id)
-            sessions = sessions_data.sessions
-
-            instances = []
-            for session_id, session_info in sessions.items():
-                project = session_info.project
-                project_hash = session_info.hash
-
-                if not project or not project_hash:
-                    raise ValueError(
-                        "PluginHub session missing required 'project' or 'hash' fields."
-                    )
-
-                instances.append({
-                    "id": f"{project}@{project_hash}",
-                    "name": project,
-                    "hash": project_hash,
-                    "unity_version": session_info.unity_version,
-                    "connected_at": session_info.connected_at,
-                    "session_id": session_id,
-                })
-
-            # Check for duplicate project names
-            name_counts = {}
-            for inst in instances:
-                name_counts[inst["name"]] = name_counts.get(
-                    inst["name"], 0) + 1
-
-            duplicates = [name for name,
-                          count in name_counts.items() if count > 1]
-
-            result = {
-                "success": True,
-                "transport": transport,
-                "instance_count": len(instances),
-                "instances": instances,
-            }
-
-            if duplicates:
-                result["warning"] = (
-                    f"Multiple instances found with duplicate project names: {duplicates}. "
-                    f"Use the computed project hash with set_active_instance(instance='<hash>')."
-                )
-
-            return result
+            sessions = sessions_data.sessions if sessions_data else {}
+            available = any(
+                _project_hash_from_instance(getattr(session, "hash", None)) == requested_hash
+                for session in sessions.values()
+            )
         else:
-            # Stdio/TCP transport: query connection pool
             pool = get_unity_connection_pool()
             instances = pool.discover_all_instances(force_refresh=False)
+            available = any(
+                _project_hash_from_instance(getattr(instance, "hash", None)) == requested_hash
+                for instance in instances
+            )
 
-            # Check for duplicate project names
-            name_counts = {}
-            for inst in instances:
-                name_counts[inst.name] = name_counts.get(inst.name, 0) + 1
-
-            duplicates = [name for name,
-                          count in name_counts.items() if count > 1]
-
-            result = {
-                "success": True,
-                "transport": transport,
-                "instance_count": len(instances),
-                "instances": [inst.to_dict() for inst in instances],
-            }
-
-            if duplicates:
-                result["warning"] = (
-                    f"Multiple instances found with duplicate project names: {duplicates}. "
-                    f"Use the computed project hash with set_active_instance(instance='<hash>')."
-                )
-
-            return result
-
+        return {
+            "success": True,
+            "transport": transport,
+            "requested_hash": requested_hash,
+            "available": available,
+        }
     except Exception as e:
-        await ctx.error(f"Error listing Unity instances: {e}")
+        await ctx.error(f"Error checking Unity instance availability: {e}")
         return {
             "success": False,
-            "error": f"Failed to list Unity instances: {str(e)}",
-            "instance_count": 0,
-            "instances": []
+            "error": f"Failed to check Unity instance availability: {str(e)}",
+            "requested_hash": requested_hash,
+            "available": False,
         }
