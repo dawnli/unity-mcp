@@ -84,6 +84,23 @@ def test_should_start_http_server_compares_four_part_revisions(monkeypatch):
     assert stopped == [(8080, "9.6.8.1")]
 
 
+def test_should_start_http_server_treats_upm_patch_version_as_four_part_revision(monkeypatch):
+    stopped = []
+    monkeypatch.setattr(
+        main,
+        "_read_existing_http_server_health",
+        lambda host, port: {"version": "9.6.9", "pid": 1234, "message": MCP_HEALTH_MESSAGE},
+    )
+    monkeypatch.setattr(
+        main,
+        "_terminate_existing_http_server",
+        lambda host, port, health: stopped.append((port, health["version"])) or True,
+    )
+
+    assert main._should_start_http_server("127.0.0.1", 8080, "9.6.8-patch.2") is True
+    assert stopped == [(8080, "9.6.9")]
+
+
 def test_should_start_http_server_exits_when_different_version_cannot_stop(monkeypatch):
     monkeypatch.setattr(
         main,

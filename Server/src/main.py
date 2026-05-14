@@ -747,13 +747,22 @@ def _is_port_reachable(host: str | None, port: int) -> bool:
 
 
 _STARTUP_VERSION_RE = re.compile(r"^[vV]?(?P<core>\d+(?:\.\d+){2,3})(?:[-A-Za-z+].*)?$")
+_UPM_PATCH_VERSION_RE = re.compile(
+    r"^[vV]?(?P<base>\d+\.\d+\.\d+)-patch\.(?P<revision>\d+)(?:\+.*)?$",
+    re.IGNORECASE,
+)
 
 
 def _parse_startup_version(version: str | None) -> tuple[int, ...] | None:
     if not version:
         return None
 
-    match = _STARTUP_VERSION_RE.match(str(version).strip())
+    version_text = str(version).strip()
+    patch_match = _UPM_PATCH_VERSION_RE.match(version_text)
+    if patch_match:
+        version_text = f"{patch_match.group('base')}.{patch_match.group('revision')}"
+
+    match = _STARTUP_VERSION_RE.match(version_text)
     if not match:
         return None
 
