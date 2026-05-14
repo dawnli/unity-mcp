@@ -1044,7 +1044,12 @@ Examples:
             "UNITY_MCP_HTTP_HOST") or parsed_url.hostname or "127.0.0.1"
         port = args.http_port or _env_port or parsed_url.port or 8080
         logger.info(f"Starting FastMCP with HTTP transport on {host}:{port}")
-        mcp.run(transport=transport, host=host, port=port)
+        mcp.run(
+            transport=transport,
+            host=host,
+            port=port,
+            uvicorn_config={"use_colors": False},
+        )
     else:
         # Use stdio transport for traditional MCP
         logger.info("Starting FastMCP with stdio transport")
