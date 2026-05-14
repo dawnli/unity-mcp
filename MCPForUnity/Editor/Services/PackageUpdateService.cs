@@ -182,13 +182,19 @@ namespace MCPForUnity.Editor.Services
 
         private static int CompareVersions(ParsedVersion left, ParsedVersion right)
         {
-            int cmp = left.Major.CompareTo(right.Major);
+            int cmp = left.ComponentCount.CompareTo(right.ComponentCount);
+            if (cmp != 0) return cmp;
+
+            cmp = left.Major.CompareTo(right.Major);
             if (cmp != 0) return cmp;
 
             cmp = left.Minor.CompareTo(right.Minor);
             if (cmp != 0) return cmp;
 
             cmp = left.Patch.CompareTo(right.Patch);
+            if (cmp != 0) return cmp;
+
+            cmp = left.Revision.CompareTo(right.Revision);
             if (cmp != 0) return cmp;
 
             // Stable is newer than prerelease when core version matches.
@@ -241,7 +247,7 @@ namespace MCPForUnity.Editor.Services
             string normalized = version.Trim().TrimStart('v', 'V');
             var match = Regex.Match(
                 normalized,
-                @"^(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)(?:-(?<label>[A-Za-z]+)(?:\.(?<number>\d+))?)?$");
+                @"^(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)(?:\.(?<revision>\d+))?(?:-(?<label>[A-Za-z]+)(?:\.(?<number>\d+))?)?$");
 
             if (!match.Success)
             {
@@ -256,6 +262,12 @@ namespace MCPForUnity.Editor.Services
             }
 
             string prereleaseLabel = match.Groups["label"].Success ? match.Groups["label"].Value : string.Empty;
+            int revision = 0;
+            if (match.Groups["revision"].Success)
+            {
+                int.TryParse(match.Groups["revision"].Value, out revision);
+            }
+
             int prereleaseNumber = 0;
             if (match.Groups["number"].Success)
             {
@@ -267,6 +279,8 @@ namespace MCPForUnity.Editor.Services
                 Major = major,
                 Minor = minor,
                 Patch = patch,
+                Revision = revision,
+                ComponentCount = match.Groups["revision"].Success ? 4 : 3,
                 PrereleaseLabel = prereleaseLabel,
                 PrereleaseNumber = prereleaseNumber,
                 IsPrerelease = !string.IsNullOrEmpty(prereleaseLabel)
@@ -381,6 +395,8 @@ namespace MCPForUnity.Editor.Services
             public int Major;
             public int Minor;
             public int Patch;
+            public int Revision;
+            public int ComponentCount;
             public string PrereleaseLabel;
             public int PrereleaseNumber;
             public bool IsPrerelease;

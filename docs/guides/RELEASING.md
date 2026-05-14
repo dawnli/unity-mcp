@@ -30,10 +30,10 @@ Release note quality depends on how you merge:
 
 What the workflow does:
 
-1. Creates a temporary `release/vX.Y.Z` branch with the version bump commit
+1. Creates a temporary `release/vX.Y.Z.N` branch with the version bump commit
 2. Opens a PR from that branch into `main`
 3. Auto-merges the PR (or waits for required checks, then merges)
-4. Creates an annotated tag `vX.Y.Z` on the merged commit
+4. Creates an annotated tag `vX.Y.Z.N` on the merged commit
 5. Creates a GitHub Release for the tag
 6. Publishes artifacts (Docker / PyPI / MCPB)
 7. Opens a PR to merge `main` back into `beta` (so `beta` gets the bump)
@@ -42,12 +42,12 @@ What the workflow does:
 
 ### 3) Verify release outputs
 
-- Confirm a new tag exists: `vX.Y.Z`
+- Confirm a new tag exists: `vX.Y.Z.N`
 - Confirm a GitHub Release exists for the tag
 - Confirm artifacts:
-  - Docker image published with version `X.Y.Z`
+  - Docker image published with version `X.Y.Z.N`
   - PyPI package published (if configured)
-  - `unity-mcp-X.Y.Z.mcpb` attached to the GitHub Release
+  - `unity-mcp-X.Y.Z.N.mcpb` attached to the GitHub Release
 
 ## Required repo settings
 
@@ -93,7 +93,7 @@ If the version bump PR cannot be merged (e.g., required checks fail):
 - The workflow will fail before creating a tag.
 - Fix the issue, then either:
   - Manually merge the PR and create the tag/release, or
-  - Close the PR, delete the `release/vX.Y.Z` branch, and re-run the workflow.
+  - Close the PR, delete the `release/vX.Y.Z.N` branch, and re-run the workflow.
 
 ### Sync PR (`main -> beta`) fails
 
@@ -104,8 +104,8 @@ If the sync PR has merge conflicts:
 
 ### Leftover release branch
 
-If the workflow fails mid-run, a `release/vX.Y.Z` branch may remain. Delete it manually before re-running:
+If the workflow fails mid-run, a `release/vX.Y.Z.N` branch may remain. Delete it manually before re-running:
 
 ```bash
-git push origin --delete release/vX.Y.Z
+git push origin --delete release/vX.Y.Z.N
 ```

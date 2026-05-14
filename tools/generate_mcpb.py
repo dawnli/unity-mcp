@@ -8,9 +8,9 @@ Usage:
     python3 tools/generate_mcpb.py VERSION [--output FILE] [--icon PATH]
 
 Examples:
-    python3 tools/generate_mcpb.py 9.0.8
-    python3 tools/generate_mcpb.py 9.0.8 --output unity-mcp-9.0.8.mcpb
-    python3 tools/generate_mcpb.py 9.0.8 --icon docs/images/coplay-logo.png
+    python3 tools/generate_mcpb.py 9.6.8.1
+    python3 tools/generate_mcpb.py 9.6.8.1 --output unity-mcp-9.6.8.1.mcpb
+    python3 tools/generate_mcpb.py 9.6.8.1 --icon docs/images/coplay-logo.png
 """
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def generate_mcpb(
     """Generate MCPB bundle file.
 
     Args:
-        version: Semantic version string (e.g., "9.0.8")
+        version: Version string (e.g., "9.6.8.1")
         output_path: Output path for the .mcpb file
         icon_path: Path to the icon file
 
@@ -114,7 +114,7 @@ def main() -> int:
     )
     parser.add_argument(
         "version",
-        help="Version string for the bundle (e.g., 9.0.8)",
+        help="Version string for the bundle (e.g., 9.6.8.1)",
     )
     parser.add_argument(
         "--output",

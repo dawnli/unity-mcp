@@ -20,6 +20,7 @@ from starlette.responses import JSONResponse
 import argparse
 import asyncio
 import json
+import re
 import signal
 import socket
 import subprocess
@@ -743,6 +744,32 @@ def _is_port_reachable(host: str | None, port: int) -> bool:
         return False
 
 
+_STARTUP_VERSION_RE = re.compile(r"^[vV]?(?P<core>\d+(?:\.\d+){2,3})(?:[-A-Za-z+].*)?$")
+
+
+def _parse_startup_version(version: str | None) -> tuple[int, ...] | None:
+    if not version:
+        return None
+
+    match = _STARTUP_VERSION_RE.match(str(version).strip())
+    if not match:
+        return None
+
+    return tuple(int(part) for part in match.group("core").split("."))
+
+
+def _compare_startup_versions(left: str | None, right: str | None) -> int | None:
+    left_parts = _parse_startup_version(left)
+    right_parts = _parse_startup_version(right)
+    if left_parts is None or right_parts is None:
+        return None
+
+    if len(left_parts) != len(right_parts):
+        return 1 if len(left_parts) == 4 else -1
+
+    return (left_parts > right_parts) - (left_parts < right_parts)
+
+
 def _terminate_existing_http_server(host: str | None, port: int, health: dict[str, Any]) -> bool:
     pid = health.get("pid")
     if not isinstance(pid, int) or pid <= 0:
@@ -783,6 +810,16 @@ def _should_start_http_server(host: str | None, port: int, current_version: str)
             "MCP for Unity HTTP server v%s is already running on port %s; startup ignored.",
             health.get("version"),
             port,
+        )
+        return False
+
+    version_cmp = _compare_startup_versions(expected_version, running_version)
+    if version_cmp is not None and version_cmp <= 0:
+        logger.info(
+            "MCP for Unity HTTP server v%s is already running on port %s; expected v%s is not newer, startup ignored.",
+            health.get("version"),
+            port,
+            current_version or "unknown",
         )
         return False
 

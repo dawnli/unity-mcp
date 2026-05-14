@@ -21,7 +21,7 @@ Examples:
     python3 tools/update_versions.py
     
     # Update all files to a specific version
-    python3 tools/update_versions.py --version 9.2.0
+    python3 tools/update_versions.py --version 9.6.8.1
     
     # Dry run to see what would be updated
     python3 tools/update_versions.py --dry-run
@@ -40,6 +40,13 @@ PYPROJECT_TOML = REPO_ROOT / "Server" / "pyproject.toml"
 SERVER_README = REPO_ROOT / "Server" / "README.md"
 ROOT_README = REPO_ROOT / "README.md"
 ZH_README = REPO_ROOT / "docs" / "i18n" / "README-zh.md"
+VERSION_PATTERN = r"[0-9]+(?:\.[0-9]+){2,3}(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?"
+
+
+def is_fork_local_version(version: str) -> bool:
+    """Return true for fork-local four-part versions like 9.6.8.1."""
+    base = version.split("-", 1)[0]
+    return base.count(".") == 3
 
 
 def load_package_version() -> str:
@@ -66,11 +73,11 @@ def update_package_json(new_version: str, dry_run: bool = False) -> bool:
     current_version = package_data.get("version", "unknown")
 
     if current_version == new_version:
-        print(f"✓ {PACKAGE_JSON.relative_to(REPO_ROOT)} already at v{new_version}")
+        print(f"[ok] {PACKAGE_JSON.relative_to(REPO_ROOT)} already at v{new_version}")
         return False
 
     print(
-        f"Updating {PACKAGE_JSON.relative_to(REPO_ROOT)}: {current_version} → {new_version}")
+        f"Updating {PACKAGE_JSON.relative_to(REPO_ROOT)}: {current_version} -> {new_version}")
 
     if not dry_run:
         package_data["version"] = new_version
@@ -92,11 +99,11 @@ def update_manifest_json(new_version: str, dry_run: bool = False) -> bool:
     current_version = manifest.get("version", "unknown")
 
     if current_version == new_version:
-        print(f"✓ {MANIFEST_JSON.relative_to(REPO_ROOT)} already at v{new_version}")
+        print(f"[ok] {MANIFEST_JSON.relative_to(REPO_ROOT)} already at v{new_version}")
         return False
 
     print(
-        f"Updating {MANIFEST_JSON.relative_to(REPO_ROOT)}: {current_version} → {new_version}")
+        f"Updating {MANIFEST_JSON.relative_to(REPO_ROOT)}: {current_version} -> {new_version}")
 
     if not dry_run:
         manifest["version"] = new_version
@@ -126,11 +133,11 @@ def update_pyproject_toml(new_version: str, dry_run: bool = False) -> bool:
     current_version = version_match.group(1)
 
     if current_version == new_version:
-        print(f"✓ {PYPROJECT_TOML.relative_to(REPO_ROOT)} already at v{new_version}")
+        print(f"[ok] {PYPROJECT_TOML.relative_to(REPO_ROOT)} already at v{new_version}")
         return False
 
     print(
-        f"Updating {PYPROJECT_TOML.relative_to(REPO_ROOT)}: {current_version} → {new_version}")
+        f"Updating {PYPROJECT_TOML.relative_to(REPO_ROOT)}: {current_version} -> {new_version}")
 
     if not dry_run:
         # Replace only the first occurrence (the version field)
@@ -147,15 +154,20 @@ def update_server_readme(new_version: str, dry_run: bool = False) -> bool:
         print(f"Warning: {SERVER_README.relative_to(REPO_ROOT)} not found")
         return False
 
+    if is_fork_local_version(new_version):
+        print(
+            f"[ok] {SERVER_README.relative_to(REPO_ROOT)} keeps official CoplayDev release URLs for fork-local v{new_version}")
+        return False
+
     content = SERVER_README.read_text(encoding="utf-8")
 
     # Pattern to match git+https URLs with version tags
-    pattern = r'git\+https://github\.com/CoplayDev/unity-mcp@v[0-9]+\.[0-9]+\.[0-9]+#subdirectory=Server'
+    pattern = rf'git\+https://github\.com/CoplayDev/unity-mcp@v{VERSION_PATTERN}#subdirectory=Server'
     replacement = f'git+https://github.com/CoplayDev/unity-mcp@v{new_version}#subdirectory=Server'
 
     if not re.search(pattern, content):
         print(
-            f"✓ {SERVER_README.relative_to(REPO_ROOT)} has no version references to update")
+            f"[ok] {SERVER_README.relative_to(REPO_ROOT)} has no version references to update")
         return False
 
     print(
@@ -174,15 +186,20 @@ def update_root_readme(new_version: str, dry_run: bool = False) -> bool:
         print(f"Warning: {ROOT_README.relative_to(REPO_ROOT)} not found")
         return False
 
+    if is_fork_local_version(new_version):
+        print(
+            f"[ok] {ROOT_README.relative_to(REPO_ROOT)} keeps official CoplayDev release URLs for fork-local v{new_version}")
+        return False
+
     content = ROOT_README.read_text(encoding="utf-8")
 
     # Pattern to match git URLs with fixed version tags
-    pattern = r'https://github\.com/CoplayDev/unity-mcp\.git\?path=/MCPForUnity#v[0-9]+\.[0-9]+\.[0-9]+'
+    pattern = rf'https://github\.com/CoplayDev/unity-mcp\.git\?path=/MCPForUnity#v{VERSION_PATTERN}'
     replacement = f'https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#v{new_version}'
 
     if not re.search(pattern, content):
         print(
-            f"✓ {ROOT_README.relative_to(REPO_ROOT)} has no version references to update")
+            f"[ok] {ROOT_README.relative_to(REPO_ROOT)} has no version references to update")
         return False
 
     print(
@@ -201,15 +218,20 @@ def update_zh_readme(new_version: str, dry_run: bool = False) -> bool:
         print(f"Warning: {ZH_README.relative_to(REPO_ROOT)} not found")
         return False
 
+    if is_fork_local_version(new_version):
+        print(
+            f"[ok] {ZH_README.relative_to(REPO_ROOT)} keeps official CoplayDev release URLs for fork-local v{new_version}")
+        return False
+
     content = ZH_README.read_text(encoding="utf-8")
 
     # Pattern to match git URLs with fixed version tags
-    pattern = r'https://github\.com/CoplayDev/unity-mcp\.git\?path=/MCPForUnity#v[0-9]+\.[0-9]+\.[0-9]+'
+    pattern = rf'https://github\.com/CoplayDev/unity-mcp\.git\?path=/MCPForUnity#v{VERSION_PATTERN}'
     replacement = f'https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#v{new_version}'
 
     if not re.search(pattern, content):
         print(
-            f"✓ {ZH_README.relative_to(REPO_ROOT)} has no version references to update")
+            f"[ok] {ZH_README.relative_to(REPO_ROOT)} has no version references to update")
         return False
 
     print(f"Updating version references in {ZH_README.relative_to(REPO_ROOT)}")

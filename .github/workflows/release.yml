@@ -97,13 +97,14 @@ jobs:
           if [[ "$BUMP" == "none" ]]; then
             echo "Release version will be: $STRIPPED"
           else
-            IFS='.' read -r MA MI PA <<< "$STRIPPED"
+            IFS='.' read -r MA MI PA REV <<< "$STRIPPED"
+            REV="${REV:-0}"
             case "$BUMP" in
-              major) ((MA+=1)); MI=0; PA=0 ;;
-              minor) ((MI+=1)); PA=0 ;;
-              patch) ((PA+=1)) ;;
+              major) ((MA+=1)); MI=0; PA=0; REV=0 ;;
+              minor) ((MI+=1)); PA=0; REV=0 ;;
+              patch) ((REV+=1)) ;;
             esac
-            echo "Release version will be: $MA.$MI.$PA"
+            echo "Release version will be: $MA.$MI.$PA.$REV"
           fi
           echo "============================================"
 
@@ -136,8 +137,8 @@ jobs:
           # Strip beta/alpha/rc suffix if present (e.g., "9.4.0-beta.1" -> "9.4.0")
           if [[ "$CURRENT_VERSION" == *"-"* ]]; then
             STABLE_VERSION=$(echo "$CURRENT_VERSION" | sed -E 's/-[a-zA-Z]+\.[0-9]+$//')
-            # Validate we have a proper X.Y.Z format after stripping
-            if ! [[ "$STABLE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            # Validate we have a proper X.Y.Z or X.Y.Z.N format after stripping
+            if ! [[ "$STABLE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
               echo "Error: Could not parse version '$CURRENT_VERSION' -> '$STABLE_VERSION'" >&2
               exit 1
             fi
@@ -172,23 +173,24 @@ jobs:
             # Use the previewed stripped version to ensure consistency with what user saw
             NEW_VERSION="$PREVIEWED_STRIPPED"
           else
-            IFS='.' read -r MA MI PA <<< "$CURRENT_VERSION"
+            IFS='.' read -r MA MI PA REV <<< "$CURRENT_VERSION"
+            REV="${REV:-0}"
             case "$BUMP" in
               major)
-                ((MA+=1)); MI=0; PA=0
+                ((MA+=1)); MI=0; PA=0; REV=0
                 ;;
               minor)
-                ((MI+=1)); PA=0
+                ((MI+=1)); PA=0; REV=0
                 ;;
               patch)
-                ((PA+=1))
+                ((REV+=1))
                 ;;
               *)
                 echo "Unknown version_bump: $BUMP" >&2
                 exit 1
                 ;;
             esac
-            NEW_VERSION="$MA.$MI.$PA"
+            NEW_VERSION="$MA.$MI.$PA.$REV"
           fi
 
           echo "New version: $NEW_VERSION"
@@ -381,10 +383,11 @@ jobs:
 
           git commit -m "chore: sync main (v${NEW_VERSION}) into beta"
 
-          # After releasing X.Y.Z on main, beta should move to X.Y.(Z+1)-beta.1.
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$NEW_VERSION"
-          NEXT_PATCH=$((PATCH + 1))
-          NEXT_BETA_VERSION="${MAJOR}.${MINOR}.${NEXT_PATCH}-beta.1"
+          # After releasing X.Y.Z.N on main, beta should move to X.Y.Z.(N+1)-beta.1.
+          IFS='.' read -r MAJOR MINOR PATCH REV <<< "$NEW_VERSION"
+          REV="${REV:-0}"
+          NEXT_REV=$((REV + 1))
+          NEXT_BETA_VERSION="${MAJOR}.${MINOR}.${PATCH}.${NEXT_REV}-beta.1"
           echo "beta_version=$NEXT_BETA_VERSION" >> "$GITHUB_OUTPUT"
           echo "Setting beta version to $NEXT_BETA_VERSION"
 

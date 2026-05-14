@@ -235,7 +235,7 @@ class TestVersionBumpingLogic:
             encoding="utf-8"
         )
 
-        new_version = "9.3.0"
+        new_version = "9.6.8.1"
         package_data = json.loads(
             temp_repo["mcp_package"].read_text(encoding="utf-8")
         )
@@ -254,7 +254,7 @@ class TestVersionBumpingLogic:
         updated = json.loads(
             temp_repo["mcp_package"].read_text(encoding="utf-8")
         )
-        assert updated["version"] == "9.3.0"
+        assert updated["version"] == "9.6.8.1"
 
     def test_update_pyproject_toml_version(self, temp_repo, sample_pyproject_toml):
         """Test updating version in pyproject.toml with regex.
@@ -270,7 +270,7 @@ class TestVersionBumpingLogic:
         """
         temp_repo["pyproject"].write_text(sample_pyproject_toml, encoding="utf-8")
 
-        new_version = "9.3.0"
+        new_version = "9.6.8.1"
         content = temp_repo["pyproject"].read_text(encoding="utf-8")
 
         # Apply regex replacement pattern from update_versions.py
@@ -300,21 +300,22 @@ class TestVersionBumpingLogic:
         """Test updating git URLs with version tags in README.
 
         Behavior:
-        1. Match pattern: git+https://...@vX.Y.Z#subdirectory=...
+        1. Match pattern: git+https://...@vX.Y.Z(.N)#subdirectory=...
         2. Replace version tag in URL fragment
         3. CRITICAL: Fragment hash # not escaped in regex
 
         Pattern:
         FROM: git+https://github.com/CoplayDev/unity-mcp@v9.2.0#subdirectory=Server
-        TO:   git+https://github.com/CoplayDev/unity-mcp@v9.3.0#subdirectory=Server
+        TO:   git+https://github.com/CoplayDev/unity-mcp@v9.6.8.1#subdirectory=Server
         """
         temp_repo["server_readme"].write_text(sample_readme_content, encoding="utf-8")
 
-        new_version = "9.3.0"
+        new_version = "9.6.8.1"
         content = temp_repo["server_readme"].read_text(encoding="utf-8")
 
         # Pattern from update_versions.py
-        pattern = r'git\+https://github\.com/CoplayDev/unity-mcp@v[0-9]+\.[0-9]+\.[0-9]+#subdirectory=Server'
+        version_pattern = r'[0-9]+(?:\.[0-9]+){2,3}(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?'
+        pattern = rf'git\+https://github\.com/CoplayDev/unity-mcp@v{version_pattern}#subdirectory=Server'
         replacement = f'git+https://github.com/CoplayDev/unity-mcp@v{new_version}#subdirectory=Server'
 
         assert re.search(pattern, content) is not None
@@ -329,20 +330,21 @@ class TestVersionBumpingLogic:
         """Test updating package URLs with version tags in README.
 
         Behavior:
-        1. Match pattern: https://github.com/...?path=...#vX.Y.Z
+        1. Match pattern: https://github.com/...?path=...#vX.Y.Z(.N)
         2. Replace version in fragment
 
         Pattern:
         FROM: https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#v9.2.0
-        TO:   https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#v9.3.0
+        TO:   https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#v9.6.8.1
         """
         temp_repo["root_readme"].write_text(sample_readme_content, encoding="utf-8")
 
-        new_version = "9.3.0"
+        new_version = "9.6.8.1"
         content = temp_repo["root_readme"].read_text(encoding="utf-8")
 
         # Pattern from update_versions.py
-        pattern = r'https://github\.com/CoplayDev/unity-mcp\.git\?path=/MCPForUnity#v[0-9]+\.[0-9]+\.[0-9]+'
+        version_pattern = r'[0-9]+(?:\.[0-9]+){2,3}(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?'
+        pattern = rf'https://github\.com/CoplayDev/unity-mcp\.git\?path=/MCPForUnity#v{version_pattern}'
         replacement = f'https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#v{new_version}'
 
         if re.search(pattern, content):

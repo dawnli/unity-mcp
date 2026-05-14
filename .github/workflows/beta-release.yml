@@ -53,21 +53,20 @@ jobs:
           echo "Current Unity package version: $CURRENT_VERSION"
 
           # Check if already a beta version - increment beta number
-          if [[ "$CURRENT_VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-beta\.([0-9]+)$ ]]; then
+          if [[ "$CURRENT_VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?)-beta\.([0-9]+)$ ]]; then
             BASE_VERSION="${BASH_REMATCH[1]}"
-            BETA_NUM="${BASH_REMATCH[2]}"
+            BETA_NUM="${BASH_REMATCH[3]}"
             NEXT_BETA=$((BETA_NUM + 1))
             BETA_VERSION="${BASE_VERSION}-beta.${NEXT_BETA}"
             echo "Incrementing beta number: $CURRENT_VERSION -> $BETA_VERSION"
-          elif [[ "$CURRENT_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-            # Stable version - bump patch and add -beta.1 suffix
-            # This ensures beta is "newer" than stable (9.3.2-beta.1 > 9.3.1)
-            # The release workflow decides final bump type (patch/minor/major)
+          elif [[ "$CURRENT_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(\.([0-9]+))?$ ]]; then
+            # Stable version - bump the fork revision and add -beta.1 suffix.
             MAJOR="${BASH_REMATCH[1]}"
             MINOR="${BASH_REMATCH[2]}"
             PATCH="${BASH_REMATCH[3]}"
-            NEXT_PATCH=$((PATCH + 1))
-            BETA_VERSION="${MAJOR}.${MINOR}.${NEXT_PATCH}-beta.1"
+            REVISION="${BASH_REMATCH[5]:-0}"
+            NEXT_REVISION=$((REVISION + 1))
+            BETA_VERSION="${MAJOR}.${MINOR}.${PATCH}.${NEXT_REVISION}-beta.1"
             echo "Converting stable to beta: $CURRENT_VERSION -> $BETA_VERSION"
           else
             echo "Error: Could not parse version '$CURRENT_VERSION'" >&2
@@ -195,27 +194,28 @@ jobs:
             BASE_VERSION="$RAW_VERSION"
           fi
 
-          # Validate we have a proper X.Y.Z format
-          if ! [[ "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          # Validate we have a proper X.Y.Z or X.Y.Z.N format
+          if ! [[ "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
             echo "Error: Could not parse version '$RAW_VERSION' -> '$BASE_VERSION'" >&2
             exit 1
           fi
 
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
+          IFS='.' read -r MAJOR MINOR PATCH REVISION <<< "$BASE_VERSION"
+          REVISION="${REVISION:-0}"
 
-          # Only bump patch if coming from stable; keep same base if already prerelease
+          # Only bump fork revision if coming from stable; keep same base if already prerelease
           if [[ "$IS_PRERELEASE" == "true" ]]; then
             # Already on a beta series - keep the same base version
-            NEXT_PATCH="$PATCH"
+            NEXT_REVISION="$REVISION"
             echo "Already prerelease, keeping base: $BASE_VERSION"
           else
-            # Stable version - bump patch to ensure beta is "newer"
-            NEXT_PATCH=$((PATCH + 1))
-            echo "Stable version, bumping patch: $PATCH -> $NEXT_PATCH"
+            # Stable version - bump fork revision to ensure beta is newer.
+            NEXT_REVISION=$((REVISION + 1))
+            echo "Stable version, bumping fork revision: $REVISION -> $NEXT_REVISION"
           fi
 
           BETA_NUMBER="$(date +%Y%m%d%H%M%S)"
-          BETA_VERSION="${MAJOR}.${MINOR}.${NEXT_PATCH}b${BETA_NUMBER}"
+          BETA_VERSION="${MAJOR}.${MINOR}.${PATCH}.${NEXT_REVISION}b${BETA_NUMBER}"
           echo "Base version: $BASE_VERSION"
           echo "Beta version: $BETA_VERSION"
           echo "beta_version=$BETA_VERSION" >> "$GITHUB_OUTPUT"

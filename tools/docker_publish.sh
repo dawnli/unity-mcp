@@ -10,11 +10,11 @@
  #   IMAGE=<image> ./docker_publish.sh <version>
  #
  # Examples:
- #   ./docker_publish.sh msanatan/mcp-for-unity-server 9.3.1
- #   IMAGE=msanatan/mcp-for-unity-server ./docker_publish.sh v9.3.1
+ #   ./docker_publish.sh msanatan/mcp-for-unity-server 9.6.8.1
+ #   IMAGE=msanatan/mcp-for-unity-server ./docker_publish.sh v9.6.8.1
  #
  # Tags pushed:
- # - vX.Y.Z
+ # - vX.Y.Z.N
  # - vX.Y
  # - vX
  set -euo pipefail
@@ -40,9 +40,8 @@
  
  VERSION="${VERSION_RAW#v}"
  
- MAJOR="${VERSION%%.*}"
- MINOR="${VERSION%.*}"     # leaves X.Y
- # (works for X.Y.Z)
+IFS='.' read -r MAJOR MINOR_PART REST <<< "$VERSION"
+MINOR="${MAJOR}.${MINOR_PART}"
  
  docker buildx build \
    --platform linux/amd64 \
