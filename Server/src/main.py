@@ -31,6 +31,19 @@ import sys
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+
+def _enable_windows_ansi_console() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        from colorama import just_fix_windows_console
+        just_fix_windows_console()
+    except Exception:
+        pass
+
+
+_enable_windows_ansi_console()
+
 import logging
 from contextlib import asynccontextmanager
 import os
