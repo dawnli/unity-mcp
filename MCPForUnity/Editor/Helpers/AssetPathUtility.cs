@@ -234,14 +234,16 @@ namespace MCPForUnity.Editor.Helpers
                 return "mcpforunityserver";
             }
 
+            string serverVersion = ConvertPackageVersionToServerVersion(version);
+
             // Package.json uses semver prerelease tags (e.g., 9.4.5-beta.1) that are not valid
             // PEP 440 pins for uvx. Use the beta prerelease range instead of a pinned prerelease.
-            if (IsSemVerPreRelease(version))
+            if (IsSemVerPreRelease(serverVersion))
             {
                 return "mcpforunityserver>=0.0.0a0";
             }
 
-            return $"mcpforunityserver=={version}";
+            return $"mcpforunityserver=={serverVersion}";
         }
 
         /// <summary>
@@ -663,6 +665,30 @@ namespace MCPForUnity.Editor.Helpers
                    version.Contains("-rc", StringComparison.OrdinalIgnoreCase) ||
                    version.Contains("-preview", StringComparison.OrdinalIgnoreCase) ||
                    version.Contains("-pre", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ConvertPackageVersionToServerVersion(string version)
+        {
+            if (string.IsNullOrEmpty(version))
+                return version;
+
+            const string patchMarker = "-patch.";
+            int patchIndex = version.IndexOf(patchMarker, StringComparison.OrdinalIgnoreCase);
+            if (patchIndex <= 0)
+                return version;
+
+            string baseVersion = version.Substring(0, patchIndex);
+            string patchSuffix = version.Substring(patchIndex + patchMarker.Length);
+            if (string.IsNullOrEmpty(baseVersion) || string.IsNullOrEmpty(patchSuffix))
+                return version;
+
+            foreach (char c in patchSuffix)
+            {
+                if (!char.IsDigit(c))
+                    return version;
+            }
+
+            return $"{baseVersion}.{patchSuffix}";
         }
     }
 }
